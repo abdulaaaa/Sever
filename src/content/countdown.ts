@@ -34,14 +34,14 @@
     if (pill) return;
 
     pill = document.createElement('div');
-    pill.id = 'page-blocker-countdown';
+    pill.id = 'sever-countdown';
     pill.setAttribute('data-blocker-pill', 'true');
     document.documentElement.appendChild(pill);
 
     // Inject isolated styles
     const style = document.createElement('style');
     style.textContent = `
-      #page-blocker-countdown {
+      #sever-countdown {
         position: fixed !important;
         bottom: 16px !important;
         left: 16px !important;
@@ -64,11 +64,11 @@
         transition: background-color 0.3s ease !important;
       }
 
-      #page-blocker-countdown.warning {
+      #sever-countdown.warning {
         background: rgba(255, 140, 0, 0.9) !important;
       }
 
-      #page-blocker-countdown.critical {
+      #sever-countdown.critical {
         background: rgba(220, 38, 38, 0.9) !important;
       }
     `;
@@ -106,7 +106,7 @@
         }
       }
     } catch (err) {
-      console.warn('Page Blocker: Failed to sync countdown', err);
+      console.warn('Sever: Failed to sync countdown', err);
     }
   }
 

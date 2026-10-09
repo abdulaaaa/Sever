@@ -1,10 +1,10 @@
-# Privacy Policy - Page Blocker Chrome Extension
+# Privacy Policy - Sever Chrome Extension
 
 **Last Updated**: October 2024
 
 ## Overview
 
-Page Blocker is designed with privacy as the highest priority. Unlike most extensions, Page Blocker does NOT collect, transmit, or store your data on our servers. Instead, you maintain complete control by using your own private Supabase database.
+Sever is designed with privacy as the highest priority. Unlike most extensions, Sever does NOT collect, transmit, or store your data on our servers. Instead, you maintain complete control by using your own private Supabase database.
 
 ## Data Collection
 

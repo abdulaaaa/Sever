@@ -6,7 +6,7 @@ const TICK_CAP_MS = 75_000; // never count more than this between two checks (sl
 
 // Run tasks one at a time so they never trip over each other.
 let queue = Promise.resolve();
-const serial = (fn) => (queue = queue.then(fn, fn).catch((e) => console.warn("Page Blocker:", e)));
+const serial = (fn) => (queue = queue.then(fn, fn).catch((e) => console.warn("Sever:", e)));
 
 // ---------- syncing with Supabase ----------
 async function flushPending() {
@@ -152,7 +152,7 @@ async function updateBadge(st) {
   const left = Math.max(0, Math.ceil((st.limit - st.used) / 60));
   await chrome.action.setBadgeText({ text: String(left) });
   await chrome.action.setBadgeBackgroundColor({ color: left === 0 ? "#b3261e" : left <= 10 ? "#c26401" : "#5f6368" });
-  await chrome.action.setTitle({ title: `Page Blocker: ${left} min of social media left today` });
+  await chrome.action.setTitle({ title: `Sever: ${left} min of social media left today` });
 
   const day = dayKey();
   let { warned } = await chrome.storage.local.get("warned");

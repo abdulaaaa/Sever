@@ -290,7 +290,7 @@
 </style>
 
 <header>
-  <h1>Page Blocker</h1>
+  <h1>Sever</h1>
   <button class="primary" onclick={openSettings}>Settings</button>
 </header>
 

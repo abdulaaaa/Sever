@@ -500,7 +500,7 @@
 </style>
 
 <div class="wrap">
-  <h1>Page Blocker</h1>
+  <h1>Sever</h1>
   <p class="lede">Changes save to your database and apply in every Chrome profile where you're signed in, within about a minute.</p>
 
   <!-- Account Card -->

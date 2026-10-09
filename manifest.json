@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "My Page Blocker",
+  "name": "Sever",
   "version": "3.0",
   "description": "Blocks pages and sites, on schedules and with a daily social media limit, synced through Supabase.",
   "permissions": [
@@ -20,7 +20,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Page Blocker",
+    "default_title": "Sever",
     "default_popup": "src/pages/popup/index.html",
     "default_icon": {
       "16": "src/assets/icons/16.png",

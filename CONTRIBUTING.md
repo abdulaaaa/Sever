@@ -1,6 +1,6 @@
-# Contributing to Page Blocker
+# Contributing to Sever
 
-Thank you for considering contributing to Page Blocker! This document outlines the process and guidelines for contributing.
+Thank you for considering contributing to Sever! This document outlines the process and guidelines for contributing.
 
 ## Table of Contents
 
@@ -27,13 +27,13 @@ Thank you for considering contributing to Page Blocker! This document outlines t
 
 2. **Clone your fork**
    ```bash
-   git clone https://github.com/YOUR-USERNAME/page-blocker.git
-   cd page-blocker
+   git clone https://github.com/YOUR-USERNAME/sever.git
+   cd sever
    ```
 
 3. **Add upstream remote**
    ```bash
-   git remote add upstream https://github.com/ORIGINAL-OWNER/page-blocker.git
+   git remote add upstream https://github.com/ORIGINAL-OWNER/sever.git
    ```
 
 4. **Set up environment**
@@ -83,7 +83,7 @@ Branch naming conventions:
 
 3. **Reload the extension** in Chrome:
    - Go to `chrome://extensions/`
-   - Click the reload icon on the Page Blocker card
+   - Click the reload icon on the Sever card
 
 4. **Test your changes** thoroughly (see [Testing](#testing))
 
@@ -324,4 +324,4 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ---
 
-Thank you for contributing to Page Blocker! Every contribution, no matter how small, helps make the project better.
+Thank you for contributing to Sever! Every contribution, no matter how small, helps make the project better.

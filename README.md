@@ -1,4 +1,4 @@
-# Page Blocker Chrome Extension
+# Sever Chrome Extension
 
 A Chrome extension that helps you manage internet usage and reduce distractions by blocking websites and pages with customizable schedules, daily time limits, and accountability tracking.
 
@@ -118,8 +118,8 @@ CREATE POLICY "Users can manage their own attempts"
 
 1. **Clone this repository**
    ```bash
-   git clone https://github.com/yourusername/page-blocker.git
-   cd page-blocker
+   git clone https://github.com/yourusername/sever.git
+   cd sever
    ```
 
 2. **Configure environment variables**
@@ -148,7 +148,7 @@ CREATE POLICY "Users can manage their own attempts"
    - Enable **Developer mode** (toggle in top right)
    - Click **Load unpacked**
    - Select the `dist` folder from this project
-   - The Page Blocker icon should appear in your toolbar
+   - The Sever icon should appear in your toolbar
 
 ### Step 3: Configure Your Blocks
 
@@ -211,7 +211,7 @@ See [PRIVACY.md](PRIVACY.md) for complete details.
 ### Project Structure
 
 ```
-page-blocker/
+sever/
 ├── src/
 │   ├── background/          # Service worker (blocking logic)
 │   ├── pages/              # UI pages (popup, options, blocked)
@@ -230,7 +230,7 @@ page-blocker/
 2. Run build script: `node build.js`
 3. Reload extension in Chrome:
    - Go to `chrome://extensions/`
-   - Click the reload icon on the Page Blocker card
+   - Click the reload icon on the Sever card
 
 ### Key Files
 
@@ -293,7 +293,7 @@ SOFTWARE.
 
 ## Support
 
-For bugs or feature requests, please [open an issue](https://github.com/yourusername/page-blocker/issues) on GitHub.
+For bugs or feature requests, please [open an issue](https://github.com/yourusername/sever/issues) on GitHub.
 
 ---
 

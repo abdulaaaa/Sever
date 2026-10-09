@@ -65,7 +65,7 @@ function copyDir(src, dest) {
 
 // Build the extension
 function build() {
-  console.log('Building Page Blocker extension...\n');
+  console.log('Building Sever extension...\n');
 
   const env = loadEnv();
   const distDir = path.join(__dirname, 'dist');
