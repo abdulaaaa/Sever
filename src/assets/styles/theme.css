@@ -1,0 +1,32 @@
+:root {
+  --bg: #f4f4f1; --card: #ffffff; --fg: #1d1d1b; --muted: #6a6a66; --line: #e3e3de; --soft: #f0f0ec;
+  --accent: #b4441f; --accent-soft: #fbe9e2; --ok: #2f7d4f; --warn: #b85c00; --danger: #b3261e;
+  --radius: 10px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171717; --card: #222221; --fg: #ececea; --muted: #a2a29d; --line: #343432; --soft: #2a2a28;
+    --accent: #f08a62; --accent-soft: #3a2419; --ok: #6cc993; --warn: #f0a24f; --danger: #ff8a80; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); }
+[hidden] { display: none !important; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 6px 12px; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { button.primary { color: #1a0d07; } }
+button.link { border: 0; background: none; padding: 2px 4px; color: var(--muted); }
+button.link:hover { color: var(--danger); }
+input[type=text], input[type=email], input[type=password], input[type=number], input[type=time], select {
+  border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 6px 10px; min-width: 0;
+}
+input:focus, button:focus-visible, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.muted { color: var(--muted); }
+.tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--soft); color: var(--muted); }
+.tag.on { background: var(--accent-soft); color: var(--accent); }
+.bar { height: 8px; background: var(--soft); border-radius: 999px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--ok); border-radius: 999px; }
+.bar.warn > i { background: var(--warn); }
+.bar.out > i { background: var(--danger); }

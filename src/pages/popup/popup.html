@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Page Blocker</title>
+  <link rel="stylesheet" href="../../assets/styles/theme.css">
+  <style>
+    body { width: 360px; font-size: 13px; line-height: 1.4; background: var(--card); }
+    header { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    h1 { font-size: 15px; margin: 0; }
+    section { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+    section:last-of-type { border-bottom: 0; }
+    h2 { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+    .big { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th { font-weight: 500; color: var(--muted); text-align: right; font-size: 11px; padding: 0 0 4px 8px; }
+    th:first-child { text-align: left; padding-left: 0; }
+    td { padding: 4px 0 4px 8px; text-align: right; border-top: 1px solid var(--line); }
+    td:first-child { text-align: left; padding-left: 0; word-break: break-all; }
+    tr.person td { font-weight: 600; background: var(--soft); border-top: 0; }
+    tr.person td:first-child { padding-left: 6px; border-radius: 6px 0 0 6px; }
+    tr.person td:last-child { padding-right: 6px; border-radius: 0 6px 6px 0; }
+    ul { margin: 0; padding-left: 16px; } li { margin: 2px 0; word-break: break-all; }
+    .notice { background: var(--accent-soft); color: var(--accent); padding: 8px 16px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Page Blocker</h1>
+    <button class="primary" id="settings">Settings</button>
+  </header>
+  <div class="notice" id="notice" hidden></div>
+  <section>
+    <h2>Social media today</h2>
+    <div class="row"><span class="big" id="left">–</span><span class="muted" id="used"></span></div>
+    <div class="bar" id="bar"><i id="fill" style="width:0"></i></div>
+  </section>
+  <section id="active-sec">
+    <h2>Blocked right now</h2>
+    <ul id="active"></ul>
+  </section>
+  <section>
+    <h2>People · attempts</h2>
+    <table>
+      <thead><tr><th>Page</th><th>Today</th><th>Week</th><th>Total</th></tr></thead>
+      <tbody id="people"></tbody>
+    </table>
+  </section>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
