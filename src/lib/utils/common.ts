@@ -1,5 +1,6 @@
 // Matching, schedules and other shared helpers.
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS } from './defaults';
+import { DEV_MODE } from './config';
 import type {
   Block,
   Schedule,
@@ -109,6 +110,37 @@ export function daysLabel(days: number[] | undefined): string {
 
 export const scheduleLabel = (s: Schedule): string =>
   `${timeLabel(s.start)} to ${timeLabel(s.end)}, ${daysLabel(s.days)}`;
+
+// ---------- settings lock ----------
+export function isSettingsLocked(settings: Settings, date: Date = new Date()): boolean {
+  if (DEV_MODE) return false;  // Dev mode bypasses lock
+  if (!settings.settings_unlock_schedule) return false;  // No schedule = never locked
+  return !schedActive(settings.settings_unlock_schedule, date);  // Locked when NOT in unlock window
+}
+
+export function nextUnlockTime(schedule: Schedule, now: Date = new Date()): string {
+  const days = schedule.days && schedule.days.length ? schedule.days : [0, 1, 2, 3, 4, 5, 6];
+  const st = mins(schedule.start);
+  const currentDay = now.getDay();
+  const currentMins = now.getHours() * 60 + now.getMinutes();
+
+  // Check if unlock is later today
+  if (days.includes(currentDay) && currentMins < st) {
+    return `today at ${timeLabel(schedule.start)}`;
+  }
+
+  // Find the next day in the schedule
+  for (let i = 1; i <= 7; i++) {
+    const checkDay = (currentDay + i) % 7;
+    if (days.includes(checkDay)) {
+      const dayName = DAY_NAMES[checkDay];
+      if (i === 1) return `tomorrow at ${timeLabel(schedule.start)}`;
+      return `${dayName} at ${timeLabel(schedule.start)}`;
+    }
+  }
+
+  return timeLabel(schedule.start);
+}
 
 // ---------- dates and counts ----------
 export function dayKey(date: Date = new Date()): string {

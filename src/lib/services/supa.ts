@@ -50,6 +50,17 @@ export async function signIn(email: string, password: string): Promise<{ id: str
   return (await saveSession(j)).user;
 }
 
+export async function verifyPassword(password: string): Promise<boolean> {
+  const session = await getSession();
+  if (!session) return false;
+  try {
+    await authRequest("token?grant_type=password", { email: session.user.email, password });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function signOut(): Promise<void> {
   const { session } = await chrome.storage.local.get("session") as { session?: Session };
   await chrome.storage.local.remove("session");

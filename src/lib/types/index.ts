@@ -22,6 +22,7 @@ export interface Block {
 export interface Settings {
   daily_limit_minutes: number;
   budget_sites: string[];
+  settings_unlock_schedule?: Schedule | null;  // When settings CAN be changed (null = always unlocked)
 }
 
 // Supabase session

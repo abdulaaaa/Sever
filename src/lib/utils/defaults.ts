@@ -30,5 +30,6 @@ export const DEFAULT_SETTINGS: Settings = {
   budget_sites: [
     "x.com", "reddit.com", "instagram.com", "facebook.com", "linkedin.com",
     "tiktok.com", "threads.net", "threads.com", "snapchat.com", "pinterest.com", "tumblr.com"
-  ]
+  ],
+  settings_unlock_schedule: null  // null = no lock (always unlocked)
 };

@@ -61,6 +61,7 @@ async function flushPending(): Promise<number | null> {
 interface SettingsRow {
   daily_limit_minutes: number;
   budget_sites: string[];
+  settings_unlock_schedule: { start: string; end: string; days: number[] } | null;
 }
 
 interface UsageRow {
@@ -104,7 +105,11 @@ async function sync(): Promise<void> {
     await chrome.storage.local.set({
       cache: {
         blocks,
-        settings: { daily_limit_minutes: s.daily_limit_minutes, budget_sites: s.budget_sites },
+        settings: {
+          daily_limit_minutes: s.daily_limit_minutes,
+          budget_sites: s.budget_sites,
+          settings_unlock_schedule: s.settings_unlock_schedule || null
+        },
         usage: { day, seconds: usageRows[0]?.seconds || 0 }
       },
       syncedAt: Date.now(),

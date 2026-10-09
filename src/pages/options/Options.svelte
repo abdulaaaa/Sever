@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { loadState, cleanTarget, scheduleLabel, schedActive, normHost } from '../../lib/utils/common';
-  import { signIn, signOut, api } from '../../lib/services/supa';
-  import type { ExtensionState, Block, Schedule } from '../../lib/types';
+  import { loadState, cleanTarget, scheduleLabel, schedActive, normHost, isSettingsLocked, nextUnlockTime, summarize } from '../../lib/utils/common';
+  import { DEV_MODE } from '../../lib/utils/config';
+  import { signIn, signOut, api, loadAttempts, verifyPassword } from '../../lib/services/supa';
+  import type { ExtensionState, Block, Schedule, AttemptSummary } from '../../lib/types';
 
   let st: ExtensionState | null = $state(null);
   let signedIn = $state(false);
@@ -28,7 +29,16 @@
   let schedStart = $state('21:00');
   let schedEnd = $state('12:00');
   let schedDays = $state<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  let schedAllDay = $state(false);
   let allowLink = $state('');
+
+  // Settings lock
+  let isLocked = $state(false);
+  let lockNextUnlock = $state('');
+  let lockEnabled = $state(false);
+  let lockStart = $state('09:00');
+  let lockEnd = $state('10:00');
+  let lockDays = $state<number[]>([0, 1, 2, 3, 4, 5, 6]);
 
   // Data arrays
   let budgetSites: string[] = $state([]);
@@ -37,6 +47,18 @@
   let alwaysBlocks: Block[] = $state([]);
   let scheduledBlocks: Array<{ block: Block; label: string; isActive: boolean }> = $state([]);
   let allowedBlocks: Block[] = $state([]);
+
+  // People report
+  let showReport = $state(false);
+  let reportLoading = $state(false);
+  let reportRows: Array<{
+    isPerson: boolean;
+    name: string;
+    target?: string;
+    today: number;
+    week: number;
+    total: number;
+  }> = $state([]);
 
   const DAYS: [number, string][] = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
 
@@ -135,6 +157,20 @@
 
     // Allowed
     allowedBlocks = st.blocks.filter((b) => b.kind === 'allow');
+
+    // Settings lock
+    const lockSched = st.settings.settings_unlock_schedule;
+    lockEnabled = !!lockSched;
+    if (lockSched) {
+      lockStart = lockSched.start;
+      lockEnd = lockSched.end;
+      lockDays = [...lockSched.days];
+      isLocked = isSettingsLocked(st.settings);
+      lockNextUnlock = isLocked ? nextUnlockTime(lockSched) : '';
+    } else {
+      isLocked = false;
+      lockNextUnlock = '';
+    }
   }
 
   // Form handlers
@@ -247,7 +283,9 @@
       toast('Pick at least one day.');
       return;
     }
-    const schedule: Schedule = { start: schedStart, end: schedEnd, days: [...schedDays].sort() };
+    const start = schedAllDay ? '00:00' : schedStart;
+    const end = schedAllDay ? '00:00' : schedEnd;
+    const schedule: Schedule = { start, end, days: [...schedDays].sort() };
     run(() => addBlock({ kind: t.includes('/') ? 'page' : 'site', target: t, schedule }), `Scheduled ${t}.`).then(() => {
       schedLink = '';
     });
@@ -274,6 +312,104 @@
       schedDays = schedDays.filter(d => d !== day);
     } else {
       schedDays = [...schedDays, day];
+    }
+  }
+
+  function toggleLockDay(day: number): void {
+    if (lockDays.includes(day)) {
+      lockDays = lockDays.filter(d => d !== day);
+    } else {
+      lockDays = [...lockDays, day];
+    }
+  }
+
+  async function confirmPassword(): Promise<boolean> {
+    if (DEV_MODE) return true;  // Skip in dev mode
+    const pwd = prompt('Enter your password to confirm:');
+    if (!pwd) {
+      toast('Cancelled.');
+      return false;
+    }
+    const valid = await verifyPassword(pwd);
+    if (!valid) {
+      toast('Incorrect password.');
+      return false;
+    }
+    return true;
+  }
+
+  async function handleLockToggle(): Promise<void> {
+    if (lockEnabled) {
+      // Turning off - require password
+      if (!(await confirmPassword())) return;
+      run(() => saveSettings({ settings_unlock_schedule: null }), 'Lock disabled.');
+    } else {
+      // Turning on - require password
+      if (lockDays.length === 0) {
+        toast('Pick at least one day.');
+        return;
+      }
+      if (!(await confirmPassword())) return;
+      const schedule: Schedule = { start: lockStart, end: lockEnd, days: [...lockDays].sort() };
+      run(() => saveSettings({ settings_unlock_schedule: schedule }), 'Lock enabled.');
+    }
+  }
+
+  async function handleLockScheduleSave(e: Event): Promise<void> {
+    e.preventDefault();
+    if (lockDays.length === 0) {
+      toast('Pick at least one day.');
+      return;
+    }
+    if (!(await confirmPassword())) return;
+    const schedule: Schedule = { start: lockStart, end: lockEnd, days: [...lockDays].sort() };
+    run(() => saveSettings({ settings_unlock_schedule: schedule }), 'Schedule saved.');
+  }
+
+  async function toggleReport(): Promise<void> {
+    if (showReport) {
+      showReport = false;
+      return;
+    }
+
+    reportLoading = true;
+    try {
+      const attempts = await loadAttempts();
+      const people = [...new Set(st!.blocks.filter((b) => b.person).map((b) => b.person))] as string[];
+      const rows: typeof reportRows = [];
+
+      for (const name of people) {
+        const entries = st!.blocks.filter((b) => b.person === name);
+        const allCounts = entries.map((b) => summarize(attempts[b.target]));
+        const sum = (k: keyof AttemptSummary): number =>
+          allCounts.reduce((a, c) => a + c[k], 0);
+
+        rows.push({
+          isPerson: true,
+          name,
+          today: sum('today'),
+          week: sum('week'),
+          total: sum('total')
+        });
+
+        for (let i = 0; i < entries.length; i++) {
+          rows.push({
+            isPerson: false,
+            name: '',
+            target: entries[i].target,
+            today: allCounts[i].today,
+            week: allCounts[i].week,
+            total: allCounts[i].total
+          });
+        }
+      }
+
+      reportRows = rows;
+      showReport = true;
+    } catch (e) {
+      toast('Could not load report.');
+    } finally {
+      reportLoading = false;
     }
   }
 
@@ -497,6 +633,95 @@
     background: var(--accent-soft);
     color: var(--accent);
   }
+  .lock-banner {
+    background: var(--danger-soft, #ffeaea);
+    color: var(--danger, #c44);
+    border: 1px solid var(--danger, #c44);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .lock-banner svg {
+    flex-shrink: 0;
+  }
+  .lock-card {
+    border-color: var(--accent);
+  }
+  .lock-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .lock-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+  }
+  .lock-sched {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .report-btn {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+  }
+  .report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+    margin-top: 12px;
+  }
+  .report-table th {
+    font-weight: 500;
+    color: var(--muted);
+    text-align: right;
+    font-size: 12px;
+    padding: 0 0 6px 10px;
+  }
+  .report-table th:first-child {
+    text-align: left;
+    padding-left: 0;
+  }
+  .report-table td {
+    padding: 6px 0 6px 10px;
+    text-align: right;
+    border-top: 1px solid var(--line);
+  }
+  .report-table td:first-child {
+    text-align: left;
+    padding-left: 0;
+    word-break: break-all;
+  }
+  .report-table tr.person td {
+    font-weight: 600;
+    background: var(--soft);
+    border-top: 0;
+  }
+  .report-table tr.person td:first-child {
+    padding-left: 8px;
+    border-radius: 6px 0 0 6px;
+  }
+  .report-table tr.person td:last-child {
+    padding-right: 8px;
+    border-radius: 0 6px 6px 0;
+  }
+  .allday {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .allday input {
+    width: 16px;
+    height: 16px;
+  }
 </style>
 
 <div class="wrap">
@@ -530,8 +755,47 @@
     {/if}
   </div>
 
-  <fieldset disabled={!signedIn}>
-    <!-- Daily Limit Card -->
+  {#if isLocked}
+    <div class="lock-banner">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      <div>
+        <strong>Settings locked</strong><br>
+        <span>Unlocks {lockNextUnlock}</span>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Settings Lock Card - locked when outside unlock window -->
+  <fieldset disabled={!signedIn || isLocked}>
+    <div class="card lock-card">
+      <h2>Settings lock</h2>
+      <p class="muted">Lock settings outside of a scheduled time window. Requires password to enable or change.</p>
+      <div class="lock-toggle">
+        <input type="checkbox" id="lock-enabled" checked={lockEnabled} onchange={handleLockToggle}>
+        <label for="lock-enabled">{lockEnabled ? 'Lock is enabled' : 'Enable lock'}</label>
+      </div>
+      {#if lockEnabled}
+        <form class="lock-sched" onsubmit={handleLockScheduleSave}>
+          <span>Unlock from <input type="time" bind:value={lockStart} required> to <input type="time" bind:value={lockEnd} required></span>
+          <span class="days">
+            {#each DAYS as [day, label]}
+              <label>
+                <input type="checkbox" value={day} checked={lockDays.includes(day)} onchange={() => toggleLockDay(day)}>
+                {label}
+              </label>
+            {/each}
+          </span>
+          <button>Save schedule</button>
+        </form>
+      {/if}
+    </div>
+  </fieldset>
+
+  <!-- Daily Limit Card - locked when settings locked -->
+  <fieldset disabled={!signedIn || isLocked}>
     <div class="card">
       <h2>Daily social media limit</h2>
       <p class="muted">Time on these sites is added together, across both profiles. When it runs out, they're blocked until midnight.</p>
@@ -553,7 +817,10 @@
         <button>Add site</button>
       </form>
     </div>
+  </fieldset>
 
+  <!-- Block cards - can add blocks even when locked -->
+  <fieldset disabled={!signedIn}>
     <!-- People Card -->
     <div class="card">
       <h2>People</h2>
@@ -562,13 +829,13 @@
         {#each personGroups as group}
           <div class="person-h">
             <span>{group.name}</span>
-            <button type="button" class="link" onclick={() => editPersonName(group.name)}>Edit</button>
+            <button type="button" class="link" onclick={() => editPersonName(group.name)} disabled={isLocked}>Edit</button>
           </div>
           <ul class="items">
             {#each group.blocks as block}
               <li>
                 <span class="t">{block.target}</span>
-                <button type="button" class="link" onclick={() => removeBlock(block)}>Remove</button>
+                <button type="button" class="link" onclick={() => removeBlock(block)} disabled={isLocked}>Remove</button>
               </li>
             {/each}
           </ul>
@@ -586,6 +853,44 @@
         <input type="text" bind:value={personLink} placeholder="Paste a profile link">
         <button>Add</button>
       </form>
+      {#if personGroups.length > 0}
+        <div class="report-btn">
+          <button type="button" onclick={toggleReport} disabled={reportLoading}>
+            {reportLoading ? 'Loading...' : showReport ? 'Hide report' : 'View report'}
+          </button>
+        </div>
+        {#if showReport}
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Page</th>
+                <th>Today</th>
+                <th>Week</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each reportRows as row}
+                {#if row.isPerson}
+                  <tr class="person">
+                    <td>{row.name}</td>
+                    <td>{row.today}</td>
+                    <td>{row.week}</td>
+                    <td>{row.total}</td>
+                  </tr>
+                {:else}
+                  <tr>
+                    <td>{row.target}</td>
+                    <td>{row.today || ''}</td>
+                    <td>{row.week || ''}</td>
+                    <td>{row.total || ''}</td>
+                  </tr>
+                {/if}
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/if}
     </div>
 
     <!-- Always Blocked Card -->
@@ -597,7 +902,7 @@
           <li>
             <span class="t">{block.target}</span>
             <span class="tag">{block.kind === 'site' ? 'whole site' : 'page'}</span>
-            <button type="button" class="link" onclick={() => removeBlock(block)}>Remove</button>
+            <button type="button" class="link" onclick={() => removeBlock(block)} disabled={isLocked}>Remove</button>
           </li>
         {:else}
           <li class="empty">Nothing here yet.</li>
@@ -623,7 +928,7 @@
             <span class="t">{item.block.target}{item.block.kind === 'site' ? '' : ' (page)'}</span>
             <span class="muted">{item.label}</span>
             <span class="tag" class:on={item.isActive}>{item.isActive ? 'active now' : 'off now'}</span>
-            <button type="button" class="link" onclick={() => removeBlock(item.block)}>Remove</button>
+            <button type="button" class="link" onclick={() => removeBlock(item.block)} disabled={isLocked}>Remove</button>
           </li>
         {:else}
           <li class="empty">Nothing scheduled.</li>
@@ -635,7 +940,10 @@
           <label><input type="radio" bind:group={schedKind} value="site">Whole site</label>
           <label><input type="radio" bind:group={schedKind} value="page">This page</label>
         </span>
-        <span>from <input type="time" bind:value={schedStart} required> to <input type="time" bind:value={schedEnd} required></span>
+        <label class="allday"><input type="checkbox" bind:checked={schedAllDay}> All day</label>
+        {#if !schedAllDay}
+          <span>from <input type="time" bind:value={schedStart} required> to <input type="time" bind:value={schedEnd} required></span>
+        {/if}
         <span class="days">
           {#each DAYS as [day, label]}
             <label>
@@ -647,8 +955,10 @@
         <button>Add</button>
       </form>
     </div>
+  </fieldset>
 
-    <!-- Always Allowed Card -->
+  <!-- Always Allowed Card - locked when settings locked -->
+  <fieldset disabled={!signedIn || isLocked}>
     <div class="card">
       <h2>Always allowed</h2>
       <p class="muted">These always open, even during scheduled blocks or after the daily limit, and don't use up your time.</p>

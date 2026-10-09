@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { loadState, schedActive, timeLabel, summarize } from '../../lib/utils/common';
-  import { loadAttempts } from '../../lib/services/supa';
-  import type { ExtensionState, Block, AttemptSummary, AttemptsMap } from '../../lib/types';
+  import { loadState, schedActive, timeLabel } from '../../lib/utils/common';
+  import type { ExtensionState } from '../../lib/types';
 
   let notice = $state('');
   let showNotice = $state(false);
@@ -11,14 +10,6 @@
   let fillPercent = $state(0);
   let barClass = $state('bar');
   let activeBlocks: Array<{ text: string }> = $state([]);
-  let peopleRows: Array<{
-    isPerson: boolean;
-    name: string;
-    target?: string;
-    today: number;
-    week: number;
-    total: number;
-  }> = $state([]);
 
   let tickInterval: ReturnType<typeof setInterval> | null = null;
   let syncInterval: ReturnType<typeof setInterval> | null = null;
@@ -131,50 +122,6 @@
     if (activeBlocks.length === 0) {
       activeBlocks.push({ text: 'Only your always-on blocks.' });
     }
-
-    // People table
-    const attempts = await loadAttempts();
-    const people = [...new Set(st.blocks.filter((b) => b.person).map((b) => b.person))] as string[];
-    const rows: typeof peopleRows = [];
-
-    for (const name of people) {
-      const entries = st.blocks.filter((b) => b.person === name);
-      const allCounts = entries.map((b) => summarize(attempts[b.target]));
-      const sum = (k: keyof AttemptSummary): number =>
-        allCounts.reduce((a, c) => a + c[k], 0);
-
-      rows.push({
-        isPerson: true,
-        name,
-        today: sum('today'),
-        week: sum('week'),
-        total: sum('total')
-      });
-
-      for (let i = 0; i < entries.length; i++) {
-        rows.push({
-          isPerson: false,
-          name: '',
-          target: entries[i].target,
-          today: allCounts[i].today,
-          week: allCounts[i].week,
-          total: allCounts[i].total
-        });
-      }
-    }
-
-    if (people.length === 0) {
-      rows.push({
-        isPerson: false,
-        name: '',
-        target: 'No people added yet.',
-        today: 0,
-        week: 0,
-        total: 0
-      });
-    }
-
-    peopleRows = rows;
   }
 
   onMount(() => {
@@ -231,45 +178,6 @@
     align-items: baseline;
     margin-bottom: 6px;
   }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-variant-numeric: tabular-nums;
-  }
-  th {
-    font-weight: 500;
-    color: var(--muted);
-    text-align: right;
-    font-size: 11px;
-    padding: 0 0 4px 8px;
-  }
-  th:first-child {
-    text-align: left;
-    padding-left: 0;
-  }
-  td {
-    padding: 4px 0 4px 8px;
-    text-align: right;
-    border-top: 1px solid var(--line);
-  }
-  td:first-child {
-    text-align: left;
-    padding-left: 0;
-    word-break: break-all;
-  }
-  tr.person td {
-    font-weight: 600;
-    background: var(--soft);
-    border-top: 0;
-  }
-  tr.person td:first-child {
-    padding-left: 6px;
-    border-radius: 6px 0 0 6px;
-  }
-  tr.person td:last-child {
-    padding-right: 6px;
-    border-radius: 0 6px 6px 0;
-  }
   ul {
     margin: 0;
     padding-left: 16px;
@@ -316,37 +224,4 @@
       <li class={item.text.includes('Only your') ? 'muted' : ''}>{item.text}</li>
     {/each}
   </ul>
-</section>
-
-<section>
-  <h2>People - attempts</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Page</th>
-        <th>Today</th>
-        <th>Week</th>
-        <th>Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each peopleRows as row}
-        {#if row.isPerson}
-          <tr class="person">
-            <td>{row.name}</td>
-            <td>{row.today}</td>
-            <td>{row.week}</td>
-            <td>{row.total}</td>
-          </tr>
-        {:else}
-          <tr>
-            <td>{row.target}</td>
-            <td>{row.today || ''}</td>
-            <td>{row.week || ''}</td>
-            <td>{row.total || ''}</td>
-          </tr>
-        {/if}
-      {/each}
-    </tbody>
-  </table>
 </section>
