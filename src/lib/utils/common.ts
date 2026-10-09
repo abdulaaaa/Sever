@@ -1,0 +1,184 @@
+// Matching, schedules and other shared helpers.
+import { DEFAULT_BLOCKS, DEFAULT_SETTINGS } from './defaults';
+import type {
+  Block,
+  Schedule,
+  Settings,
+  ExtensionState,
+  DecisionResult,
+  AttemptSummary,
+  PendingUsage,
+  AttemptRecord,
+  Session,
+  Cache
+} from '../types';
+
+export const ALIASES: Record<string, string> = { "twitter.com": "x.com" };
+const SUB = /^(www|m|mobile|old|new|web)\./;
+
+export function normHost(h: string): string {
+  h = (h || "").toLowerCase();
+  while (SUB.test(h)) h = h.replace(SUB, "");
+  return ALIASES[h] || h;
+}
+
+// "https://M.Facebook.com/Nadia.Anwar/?x=1" -> "facebook.com/nadia.anwar/"
+export function normalize(url: string): string {
+  try {
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) return "";
+    return normHost(u.hostname) + u.pathname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+// Turn whatever was typed or pasted into a target like "x.com/someone" or "x.com".
+export function cleanTarget(input: string, kind: 'site' | 'page'): string | null {
+  let s = (input || "").trim().toLowerCase();
+  if (!s) return null;
+  if (!/^[a-z]+:\/\//.test(s)) s = "https://" + s;
+  let u: URL;
+  try { u = new URL(s); } catch { return null; }
+  const host = normHost(u.hostname);
+  if (!host.includes(".")) return null;
+  if (kind === "site") return host;
+  const path = u.pathname.replace(/\/+$/, "");
+  return host + path;
+}
+
+export const isSiteTarget = (t: string): boolean => !t.includes("/");
+
+// A site target matches the site and its subdomains. A page target matches the
+// page and anything under it, but not a longer name (x.com/ab does not match x.com/abc).
+export function matches(url: string, target: string): boolean {
+  const n = normalize(url);
+  if (!n) return false;
+  const host = n.slice(0, n.indexOf("/"));
+  if (isSiteTarget(target)) return host === target || host.endsWith("." + target);
+  return n === target || n.startsWith(target + "/");
+}
+
+export function domainsFor(host: string): string[] {
+  return [host, ...Object.keys(ALIASES).filter((k) => ALIASES[k] === host)];
+}
+
+const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Regular expression used by Chrome's built-in blocker for a page target.
+export function pageRegex(target: string): string {
+  const i = target.indexOf("/");
+  const host = target.slice(0, i);
+  const path = target.slice(i);
+  return "^https?://([a-z0-9-]+\\.)*(" + domainsFor(host).map(esc).join("|") + ")" + esc(path) + "([/?#]|$)";
+}
+
+// ---------- schedules ----------
+const mins = (hhmm: string): number => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + (m || 0);
+};
+
+export function schedActive(s: Schedule | null, date: Date = new Date()): boolean {
+  if (!s) return false;
+  const days = s.days && s.days.length ? s.days : [0, 1, 2, 3, 4, 5, 6];
+  const st = mins(s.start), en = mins(s.end);
+  const now = date.getHours() * 60 + date.getMinutes();
+  const d = date.getDay(), y = (d + 6) % 7;
+  if (st === en) return days.includes(d);
+  if (st < en) return days.includes(d) && now >= st && now < en;
+  return (days.includes(d) && now >= st) || (days.includes(y) && now < en);
+}
+
+export function timeLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const n = h % 12 === 0 ? 12 : h % 12;
+  return `${n}${m ? ":" + String(m).padStart(2, "0") : ""} ${h < 12 ? "am" : "pm"}`;
+}
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+export function daysLabel(days: number[] | undefined): string {
+  const d = [...new Set(days && days.length ? days : [0, 1, 2, 3, 4, 5, 6])].sort();
+  const key = d.join("");
+  if (key === "0123456") return "every day";
+  if (key === "12345") return "on weekdays";
+  if (key === "06") return "on weekends";
+  return "on " + [1, 2, 3, 4, 5, 6, 0].filter((x) => d.includes(x)).map((x) => DAY_NAMES[x]).join(", ");
+}
+
+export const scheduleLabel = (s: Schedule): string =>
+  `${timeLabel(s.start)} to ${timeLabel(s.end)}, ${daysLabel(s.days)}`;
+
+// ---------- dates and counts ----------
+export function dayKey(date: Date = new Date()): string {
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+}
+
+export function summarize(times: number[] = [], now: Date = new Date()): AttemptSummary {
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const week = new Date(today); week.setDate(week.getDate() - ((week.getDay() + 6) % 7));
+  return {
+    total: times.length,
+    today: times.filter((t) => t >= today.getTime()).length,
+    week: times.filter((t) => t >= week.getTime()).length
+  };
+}
+
+// ---------- current state ----------
+interface StorageData {
+  cache?: Cache;
+  pendingUsage?: PendingUsage;
+  pendingAttempts?: AttemptRecord[];
+  session?: Session;
+  lastError?: string;
+  syncedAt?: number;
+}
+
+export async function loadState(): Promise<ExtensionState> {
+  const s = await chrome.storage.local.get([
+    "cache", "pendingUsage", "pendingAttempts", "session", "lastError", "syncedAt"
+  ]) as StorageData;
+
+  const blocks = s.cache?.blocks ?? DEFAULT_BLOCKS;
+  const settings = s.cache?.settings ?? DEFAULT_SETTINGS;
+  const day = dayKey();
+  const serverUsed = s.cache?.usage?.day === day ? s.cache.usage.seconds : 0;
+  const pending = (s.pendingUsage || {})[day] || 0;
+  const used = serverUsed + pending;
+  const limit = settings.daily_limit_minutes * 60;
+
+  return {
+    blocks,
+    settings,
+    used,
+    limit,
+    out: used >= limit,
+    session: s.session || null,
+    pendingAttempts: s.pendingAttempts || [],
+    lastError: s.lastError || null,
+    syncedAt: s.syncedAt || null,
+    usingDefaults: !s.cache
+  };
+}
+
+export function isBudgetSite(url: string, settings: Settings): boolean {
+  return settings.budget_sites.some((d) => matches(url, normHost(d)));
+}
+
+// What should happen to this address right now?
+// Returns null (allowed), { id } for a block, or { budget: true }.
+export function decide(url: string, st: ExtensionState, date: Date = new Date()): DecisionResult | null {
+  if (!normalize(url)) return null;
+  const { blocks, settings, out } = st;
+  if (blocks.some((b) => b.kind === "allow" && matches(url, b.target))) return null;
+  const always = blocks.filter((b) => b.kind !== "allow" && !b.schedule);
+  always.sort((a, b) => (b.person ? 1 : 0) - (a.person ? 1 : 0));
+  for (const b of always) if (matches(url, b.target)) return { id: b.id };
+  for (const b of blocks) {
+    if (b.kind !== "allow" && b.schedule && schedActive(b.schedule, date) && matches(url, b.target)) return { id: b.id };
+  }
+  if (out && isBudgetSite(url, settings)) return { budget: true };
+  return null;
+}
