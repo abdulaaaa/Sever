@@ -35,5 +35,6 @@ node_modules/
 coverage/
 .nyc_output/
 
-# Claude Code local config
+# AI agent instructions and Claude Code local config (kept on this machine only)
+AGENTS.md
 .claude/
