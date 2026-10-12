@@ -28,6 +28,7 @@ import {
   emptyFocusDay,
   focusLeft,
   focusSites,
+  trackingFor,
   decide
 } from './common';
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS, DEFAULT_FOCUS_CONFIG } from './defaults';
@@ -532,6 +533,53 @@ describe('lock-in helpers', () => {
     };
     expect(focusSites(st)).toEqual(['x.com', 'news.com', 'reddit.com']);
     expect(focusSites({ ...st, focus: null })).toEqual(['x.com', 'news.com']);
+  });
+});
+
+describe('trackingFor', () => {
+  const focus: FocusState = { task: 'write', totalMs: 3_600_000, phase: 'focus', endsAt: 10_000 };
+  const YT = 'https://www.youtube.com/watch?v=abc';
+
+  it('tracks nothing without an address or on an unrelated site', () => {
+    expect(trackingFor(null, state(), 5)).toBeNull();
+    expect(trackingFor('https://example.com/', state(), 5)).toBeNull();
+  });
+
+  it('counts a budget site against the limit until the limit is used up', () => {
+    expect(trackingFor('https://old.reddit.com/r/all', state(), 5)).toEqual({
+      since: 5,
+      site: 'reddit.com'
+    });
+    expect(trackingFor('https://old.reddit.com/r/all', state({ out: true }), 5)).toBeNull();
+  });
+
+  it('records YouTube and WhatsApp apart from the limit, even when it is used up', () => {
+    expect(trackingFor(YT, state(), 5)).toEqual({ since: 5, site: 'youtube.com', extra: true });
+    expect(trackingFor('https://web.whatsapp.com/', state({ out: true }), 5)).toEqual({
+      since: 5,
+      site: 'whatsapp.com',
+      extra: true
+    });
+  });
+
+  it('logs YouTube with the session while the lock-in timer runs', () => {
+    expect(trackingFor(YT, state({ focus }), 5)).toEqual({ since: 5, focusVideo: true });
+    expect(trackingFor(YT, state({ focus: { ...focus, phase: 'paused' } }), 5)).toEqual({
+      since: 5,
+      site: 'youtube.com',
+      extra: true
+    });
+    expect(trackingFor('https://web.whatsapp.com/', state({ focus }), 5)).toEqual({
+      since: 5,
+      site: 'whatsapp.com',
+      extra: true
+    });
+  });
+
+  it('treats a site in both lists as a budget site', () => {
+    const settings: Settings = { ...DEFAULT_SETTINGS, budget_sites: ['youtube.com'] };
+    expect(trackingFor(YT, state({ settings }), 5)).toEqual({ since: 5, site: 'youtube.com' });
+    expect(trackingFor(YT, state({ settings, out: true }), 5)).toBeNull();
   });
 });
 

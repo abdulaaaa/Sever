@@ -14,7 +14,8 @@ import type {
   Session,
   Cache,
   FocusState,
-  FocusDay
+  FocusDay,
+  TrackingState
 } from '../types';
 
 export const ALIASES: Record<string, string> = { 'twitter.com': 'x.com' };
@@ -369,6 +370,21 @@ export const FOCUS_YT_BLOCKED = '(feed|shorts|[^?#]*/shorts)';
 const FOCUS_YT_RE = new RegExp(`^([a-z0-9-]+\\.)*youtube\\.com/${FOCUS_YT_BLOCKED}(/|$)`);
 
 export const isYouTube = (url: string): boolean => matches(url, YOUTUBE);
+
+// What to count time against while this address is in front, or null for nothing.
+export function trackingFor(
+  url: string | null,
+  st: Pick<ExtensionState, 'settings' | 'out' | 'focus'>,
+  now: number
+): TrackingState | null {
+  if (!url) return null;
+  // YouTube while the timer runs is logged with the session, not counted against the daily limit.
+  if (st.focus?.phase === 'focus' && isYouTube(url)) return { since: now, focusVideo: true };
+  const site = budgetSiteFor(url, st.settings);
+  if (site) return st.out ? null : { since: now, site };
+  const extra = extraSiteFor(url);
+  return extra ? { since: now, site: extra, extra: true } : null;
+}
 
 // "https://www.youtube.com/watch?v=abc&t=158s" -> "abc"
 export function videoId(link: string): string | null {

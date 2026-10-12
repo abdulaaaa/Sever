@@ -149,7 +149,8 @@ export interface DecisionResult {
 // Tracking state stored in session storage
 export interface TrackingState {
   since: number; // timestamp
-  site?: string; // budget site being counted
+  site?: string; // budget site or tracked-only site being counted
+  extra?: boolean; // tracked-only site: recorded per site, not counted against the limit
   focusVideo?: boolean; // YouTube during a lock-in session: logged, not counted against the limit
 }
 
