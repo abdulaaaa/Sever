@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { dayKey, FOCUS_KEYS, emptyFocusDay, focusLeft } from '../../lib/utils/common';
+  import { EXTRA_SITES, EXTRA_PREFIX } from '../../lib/utils/config';
   import { fetchSiteUsageSince, fetchUsageSince, fetchFocusSince } from '../../lib/services/supa';
   import {
     addDays,
@@ -35,6 +36,7 @@
     note: string;
     values: Record<string, number>;
     total: number;
+    totalAll: number; // with YouTube and WhatsApp
   }
 
   // Weeks run Monday to Sunday.
@@ -49,6 +51,7 @@
   let siteError = $state(false);
   let data: UsageData = $state.raw({ days: [], series: [], extra: [], firstData: -1 });
   let range = $state(4); // weeks shown in the chart
+  let withExtra = $state(false); // also show YouTube and WhatsApp, which don't count against the limit
   let hover: number | null = $state(null);
   let focusDays: Array<{ date: Date; d: FocusDay }> = $state([]); // lock-in history, newest first
   let focusRunning = $state(false);
@@ -122,7 +125,8 @@
       totalRows,
       local.pendingSiteUsage || {},
       local.pendingUsage || {},
-      SLOTS
+      SLOTS,
+      EXTRA_SITES.map((site) => EXTRA_PREFIX + site)
     );
     loading = false;
   }
@@ -139,6 +143,21 @@
     }))
   );
 
+  // Tracked-only sites keep fixed colours and stack on top of the limit sites.
+  const NAMES: Record<string, string> = {
+    [EXTRA_PREFIX + 'youtube.com']: 'YouTube',
+    [EXTRA_PREFIX + 'whatsapp.com']: 'WhatsApp'
+  };
+  const label = (key: string): string => NAMES[key] || key;
+  const extraLabel = $derived(data.extra.map(label).join(' + '));
+  const extraSeries: Series[] = $derived(
+    data.extra.map((key, i) => ({ key, color: `var(--x${i + 1})` }))
+  );
+  const cols = $derived(withExtra ? [...series, ...extraSeries] : series);
+
+  const dayTotal = (d: UsageDay): number => (withExtra ? d.totalAll : d.total);
+  const dayVal = (d: UsageDay, k: string): number => d.values[k] || d.extra[k] || 0;
+
   function weekRow(w: number): Row | null {
     const avg = weekAverage(data, w);
     if (!avg) return null;
@@ -152,15 +171,16 @@
     return {
       label: `${dateFmt(avg.first)} – ${dateFmt(addDays(avg.first, 6))}`,
       note,
-      values: avg.values,
-      total: avg.total
+      values: { ...avg.values, ...avg.extra },
+      total: avg.total,
+      totalAll: avg.totalAll
     };
   }
 
   const shown = $derived(days.slice((WEEKS - range) * 7));
 
   const scale = $derived.by(() => {
-    const maxMin = Math.max(1, ...shown.map((d) => d.total)) / 60;
+    const maxMin = Math.max(1, ...shown.map(dayTotal)) / 60;
     const step = [5, 10, 15, 30, 60, 120, 240].find((s) => maxMin / s <= 4) ?? 480;
     const top = Math.max(step, Math.ceil(maxMin / step) * step);
     const ticks: number[] = [];
@@ -180,7 +200,13 @@
   const dayRows = $derived(
     shown
       .filter((_, i) => (WEEKS - range) * 7 + i >= firstData)
-      .map((d): Row => ({ label: dayFmt(d.date), note: '', values: d.values, total: d.total }))
+      .map((d): Row => ({
+        label: dayFmt(d.date),
+        note: '',
+        values: { ...d.values, ...d.extra },
+        total: d.total,
+        totalAll: d.totalAll
+      }))
       .reverse()
   );
 
@@ -206,8 +232,8 @@
       <thead>
         <tr>
           <th>{first}</th>
-          {#each series as s (s.key)}
-            <th class="num"><span class="sw" style:background={s.color}></span>{s.key}</th>
+          {#each cols as s (s.key)}
+            <th class="num"><span class="sw" style:background={s.color}></span>{label(s.key)}</th>
           {/each}
           <th class="num">Total</th>
         </tr>
@@ -219,10 +245,10 @@
               {r.label}
               {#if r.note}<span class="muted small"> · {r.note}</span>{/if}
             </td>
-            {#each series as s (s.key)}
+            {#each cols as s (s.key)}
               <td class="num">{fmt(r.values[s.key] || 0)}</td>
             {/each}
-            <td class="num total">{fmt(r.total)}</td>
+            <td class="num total">{fmt(withExtra ? r.totalAll : r.total)}</td>
           </tr>
         {/each}
       </tbody>
@@ -230,10 +256,22 @@
   </div>
 {/snippet}
 
+{#snippet figures(total: number, totalAll: number)}
+  {#if data.extra.length}
+    <div class="pair">
+      <div><b>{fmt(total)}</b><span class="muted small">Limit sites</span></div>
+      <div><b>{fmt(totalAll)}</b><span class="muted small">With {extraLabel}</span></div>
+    </div>
+  {:else}
+    <b>{fmt(total)}</b>
+  {/if}
+{/snippet}
+
 <div class="wrap">
   <h1>Usage analytics</h1>
   <p class="lede">
     Time on your daily-limit sites, per site, for the last {WEEKS} weeks.
+    {#if data.extra.length}{extraLabel} time is recorded too and doesn't count against the limit.{/if}
     <a href="../options/index.html">Settings</a>
   </p>
 
@@ -258,18 +296,18 @@
     <div class="tiles">
       <div class="tile">
         <span class="muted small">Today</span>
-        <b>{fmt(days[days.length - 1].total)}</b>
+        {@render figures(days[days.length - 1].total, days[days.length - 1].totalAll)}
       </div>
       {#if thisWeek}
         <div class="tile">
           <span class="muted small">This week, average per day</span>
-          <b>{fmt(thisWeek.total)}</b>
+          {@render figures(thisWeek.total, thisWeek.totalAll)}
         </div>
       {/if}
       {#if lastWeek}
         <div class="tile">
           <span class="muted small">Last week, average per day</span>
-          <b>{fmt(lastWeek.total)}</b>
+          {@render figures(lastWeek.total, lastWeek.totalAll)}
         </div>
       {/if}
     </div>
@@ -280,23 +318,39 @@
           <h2>Time per day</h2>
           <p class="muted">Each bar is one day, split by site.</p>
         </div>
-        <div class="ranges">
-          {#each [2, 4, 12] as w (w)}
-            <button
-              class:on={range === w}
-              aria-pressed={range === w}
-              onclick={() => {
-                range = w;
-                hover = null;
-              }}>{w} weeks</button
-            >
-          {/each}
+        <div class="controls">
+          {#if data.extra.length}
+            <div class="ranges">
+              <button
+                class:on={!withExtra}
+                aria-pressed={!withExtra}
+                onclick={() => (withExtra = false)}>Limit sites only</button
+              >
+              <button
+                class:on={withExtra}
+                aria-pressed={withExtra}
+                onclick={() => (withExtra = true)}>With {extraLabel}</button
+              >
+            </div>
+          {/if}
+          <div class="ranges">
+            {#each [2, 4, 12] as w (w)}
+              <button
+                class:on={range === w}
+                aria-pressed={range === w}
+                onclick={() => {
+                  range = w;
+                  hover = null;
+                }}>{w} weeks</button
+              >
+            {/each}
+          </div>
         </div>
       </div>
 
       <div class="legend">
-        {#each series as s (s.key)}
-          <span><span class="sw" style:background={s.color}></span>{s.key}</span>
+        {#each cols as s (s.key)}
+          <span><span class="sw" style:background={s.color}></span>{label(s.key)}</span>
         {/each}
       </div>
 
@@ -320,15 +374,15 @@
             {#each shown as d, i (d.key)}
               <button
                 class="col"
-                aria-label="{dayFmt(d.date)}: {fmt(d.total)}"
+                aria-label="{dayFmt(d.date)}: {fmt(dayTotal(d))}"
                 onmouseenter={() => (hover = i)}
                 onfocus={() => (hover = i)}
                 onblur={() => (hover = null)}
               >
-                {#each series as s (s.key)}
-                  {#if d.values[s.key]}
+                {#each cols as s (s.key)}
+                  {#if dayVal(d, s.key)}
                     <i
-                      style:height="{(d.values[s.key] / scale.top) * PLOT_H}px"
+                      style:height="{(dayVal(d, s.key) / scale.top) * PLOT_H}px"
                       style:background={s.color}
                     ></i>
                   {/if}
@@ -344,13 +398,12 @@
                 class:right={pos > 0.75}
                 style:left="{pos * 100}%"
               >
-                <div class="top"><span>{dayFmt(d.date)}</span><span>{fmt(d.total)}</span></div>
-                {#each series as s (s.key)}
-                  {#if d.values[s.key]}
+                <div class="top"><span>{dayFmt(d.date)}</span><span>{fmt(dayTotal(d))}</span></div>
+                {#each cols as s (s.key)}
+                  {#if dayVal(d, s.key)}
                     <div>
-                      <span><span class="sw" style:background={s.color}></span>{s.key}</span><span
-                        >{fmt(d.values[s.key])}</span
-                      >
+                      <span><span class="sw" style:background={s.color}></span>{label(s.key)}</span
+                      ><span>{fmt(dayVal(d, s.key))}</span>
                     </div>
                   {/if}
                 {/each}
@@ -368,7 +421,11 @@
 
     <div class="card">
       <h2>Weekly average</h2>
-      <p class="muted">Average time per day in each week (Monday to Sunday), per site.</p>
+      <p class="muted">
+        Average time per day in each week (Monday to Sunday), per site.{withExtra
+          ? ` Total includes ${extraLabel}.`
+          : ''}
+      </p>
       {@render table('Week', weekRows)}
     </div>
 
@@ -433,6 +490,8 @@
     --s7: #6250d6;
     --s-other: #8a8a85;
     --s-unsplit: #c9c9c3;
+    --x1: #c8281e;
+    --x2: #0e9aa7;
   }
   @media (prefers-color-scheme: dark) {
     .wrap {
@@ -445,6 +504,8 @@
       --s7: #9085e9;
       --s-other: #7d7d78;
       --s-unsplit: #4a4a47;
+      --x1: #e5534b;
+      --x2: #2bb8c6;
     }
   }
   .head {
@@ -453,6 +514,21 @@
     gap: 10px;
     align-items: flex-start;
     justify-content: space-between;
+  }
+  .tiles {
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  }
+  .pair {
+    display: flex;
+    gap: 22px;
+  }
+  .pair span {
+    display: block;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
   }
   .ranges {
     display: flex;
