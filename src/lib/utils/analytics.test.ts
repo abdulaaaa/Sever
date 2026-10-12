@@ -53,7 +53,6 @@ describe('buildUsage', () => {
     const onlyExtra = buildUsage(START, TODAY, [SITE_ROWS[2]], [], {}, {}, 7, EXTRA);
     expect(onlyExtra.firstData).toBe(8);
     expect(onlyExtra.firstLimit).toBe(-1);
-    expect(onlyExtra.firstExtra).toBe(8);
     expect(buildUsage(START, TODAY, [], [], {}, {}, 7, EXTRA).firstData).toBe(-1);
   });
 
@@ -129,6 +128,32 @@ describe('weekAverage', () => {
     expect(week.total).toBe(100);
     expect(week.extra['extra:youtube.com']).toBe(100);
     expect(week.totalAll).toBe(200);
+  });
+
+  it('averages each tracked-only site from its own first day', () => {
+    // YouTube since Monday, phone YouTube only since Friday.
+    const phone = 'extra:phone:youtube.com';
+    const data = buildUsage(
+      START,
+      TODAY,
+      [
+        { day: '2026-09-28', site: 'extra:youtube.com', seconds: 700 },
+        { day: '2026-10-02', site: phone, seconds: 600 }
+      ],
+      [],
+      {},
+      {},
+      7,
+      [...EXTRA, phone]
+    );
+    expect(data.series).toEqual([]);
+    const week = weekAverage(data, 0)!;
+    expect(week.total).toBe(0);
+    expect(week.extra['extra:youtube.com']).toBe(100);
+    expect(week.extra[phone]).toBe(200);
+    expect(week.totalAll).toBe(300);
+    // Later weeks still count from that first day, not from their own.
+    expect(weekAverage(data, 1)!.extra[phone]).toBe(0);
   });
 
   it('averages limit time from its own first day when tracked-only time is older', () => {

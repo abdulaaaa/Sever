@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { dayKey, FOCUS_KEYS, emptyFocusDay, focusLeft } from '../../lib/utils/common';
-  import { EXTRA_SITES, EXTRA_PREFIX } from '../../lib/utils/config';
+  import { EXTRA_SITES, EXTRA_PREFIX, PHONE_SITES, PHONE_PREFIX } from '../../lib/utils/config';
   import { fetchSiteUsageSince, fetchUsageSince, fetchFocusSince } from '../../lib/services/supa';
   import {
     addDays,
@@ -54,8 +54,7 @@
     series: [],
     extra: [],
     firstData: -1,
-    firstLimit: -1,
-    firstExtra: -1
+    firstLimit: -1
   });
   let range = $state(4); // weeks shown in the chart
   let withExtra = $state(false); // also show YouTube and WhatsApp, which don't count against the limit
@@ -133,7 +132,10 @@
       local.pendingSiteUsage || {},
       local.pendingUsage || {},
       SLOTS,
-      EXTRA_SITES.map((site) => EXTRA_PREFIX + site)
+      [
+        ...EXTRA_SITES.map((site) => EXTRA_PREFIX + site),
+        ...PHONE_SITES.map((site) => PHONE_PREFIX + site)
+      ]
     );
     loading = false;
   }
@@ -153,10 +155,18 @@
   // Tracked-only sites keep fixed colours and stack on top of the limit sites.
   const NAMES: Record<string, string> = {
     [EXTRA_PREFIX + 'youtube.com']: 'YouTube',
-    [EXTRA_PREFIX + 'whatsapp.com']: 'WhatsApp'
+    [EXTRA_PREFIX + 'whatsapp.com']: 'WhatsApp',
+    [PHONE_PREFIX + 'youtube.com']: 'YouTube (phone)',
+    [PHONE_PREFIX + 'whatsapp.com']: 'WhatsApp (phone)'
   };
   const label = (key: string): string => NAMES[key] || key;
-  const extraLabel = $derived(data.extra.map(label).join(' + '));
+  // The phone columns belong to the same two apps, so the short label names each app once.
+  const extraLabel = $derived(
+    data.extra
+      .filter((key) => !key.startsWith(PHONE_PREFIX))
+      .map(label)
+      .join(' + ')
+  );
   const extraSeries: Series[] = $derived(
     data.extra.map((key, i) => ({ key, color: `var(--x${i + 1})` }))
   );
@@ -499,6 +509,8 @@
     --s-unsplit: #c9c9c3;
     --x1: #c8281e;
     --x2: #0e9aa7;
+    --x3: #e88e86;
+    --x4: #7fcfd6;
   }
   @media (prefers-color-scheme: dark) {
     .wrap {
@@ -513,6 +525,8 @@
       --s-unsplit: #4a4a47;
       --x1: #e5534b;
       --x2: #2bb8c6;
+      --x3: #f2aaa5;
+      --x4: #9be0e7;
     }
   }
   .head {

@@ -20,7 +20,6 @@ export interface UsageData {
   extra: string[]; // site keys of the tracked-only sites, kept apart from series
   firstData: number; // index of the first day with any time recorded, or -1
   firstLimit: number; // index of the first day with limit time, or -1
-  firstExtra: number; // index of the first day with tracked-only time, or -1
 }
 
 export interface WeekAverage {
@@ -104,18 +103,17 @@ export function buildUsage(
     series,
     extra,
     firstData: first((d) => d.totalAll),
-    firstLimit: first((d) => d.total),
-    firstExtra: first((d) => d.totalAll - d.total)
+    firstLimit: first((d) => d.total)
   };
 }
 
 // Average per day for week w, where week 0 starts at days[0] (a Monday).
 // Days before the first recorded day and days after today don't count, so
-// the current week divides by the days so far. Limit time and tracked-only
-// time each count from their own first day, so neither is averaged over days
-// when it wasn't being recorded yet.
+// the current week divides by the days so far. Limit time and each
+// tracked-only site count from their own first day, so none is averaged over
+// days when it wasn't being recorded yet.
 export function weekAverage(data: UsageData, w: number): WeekAverage | null {
-  const { days, series, extra, firstData, firstLimit, firstExtra } = data;
+  const { days, series, extra, firstData, firstLimit } = data;
   if (firstData < 0 || w < 0 || w * 7 >= days.length) return null;
   const since = (first: number): UsageDay[] =>
     first < 0 ? [] : days.slice(w * 7, w * 7 + 7).filter((_, i) => w * 7 + i >= first);
@@ -125,11 +123,13 @@ export function weekAverage(data: UsageData, w: number): WeekAverage | null {
   const n = since(firstData).length;
   if (!n) return null;
   const limit = since(firstLimit);
-  const tracked = since(firstExtra);
   const values: Record<string, number> = {};
   for (const k of series) values[k] = avg(limit, (d) => d.values[k] || 0);
   const extras: Record<string, number> = {};
-  for (const k of extra) extras[k] = avg(tracked, (d) => d.extra[k] || 0);
+  for (const k of extra) {
+    const tracked = since(days.findIndex((d) => d.extra[k] > 0));
+    extras[k] = avg(tracked, (d) => d.extra[k] || 0);
+  }
   const total = avg(limit, (d) => d.total);
   return {
     first: days[w * 7].date,
@@ -137,6 +137,6 @@ export function weekAverage(data: UsageData, w: number): WeekAverage | null {
     values,
     total,
     extra: extras,
-    totalAll: total + avg(tracked, (d) => d.totalAll - d.total)
+    totalAll: total + Object.values(extras).reduce((a, b) => a + b, 0)
   };
 }

@@ -198,6 +198,99 @@ CREATE POLICY "Users can manage their own site usage"
   ON site_usage FOR ALL USING (auth.uid() = user_id);
 ```
 
+**iPhone app time (optional, for the Analytics page).** Run this block if you want YouTube and WhatsApp time from your iPhone, sent by iOS Shortcuts (see [iPhone YouTube and WhatsApp](#iphone-youtube-and-whatsapp)):
+
+```sql
+-- Secrets the phone may use. Only a hash is stored. RLS is on with no
+-- policies, so only the phone_event function can read these tables.
+CREATE TABLE phone_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+);
+
+-- Apps that are open on the phone right now, waiting for their close event
+CREATE TABLE phone_open (
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  app TEXT NOT NULL,
+  opened_at TIMESTAMPTZ NOT NULL,
+  day DATE NOT NULL,
+  PRIMARY KEY (user_id, app)
+);
+
+ALTER TABLE phone_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE phone_open ENABLE ROW LEVEL SECURITY;
+
+-- Called by the iPhone when an app is opened or closed. A close is paired with
+-- the open before it and the seconds between them are added to site_usage under
+-- "extra:phone:<site>". It never touches the usage table, so this time cannot
+-- count against the daily limit. Returns the seconds added.
+CREATE OR REPLACE FUNCTION phone_event(p_secret TEXT, p_app TEXT, p_event TEXT, p_time TEXT)
+RETURNS INTEGER AS $$
+DECLARE
+  v_cap CONSTANT INTEGER := 7200; -- most seconds one session can add, in case a close was missed
+  v_user UUID;
+  v_app TEXT := lower(p_app);
+  v_site TEXT;
+  v_at TIMESTAMPTZ := p_time::timestamptz;
+  v_open public.phone_open%ROWTYPE;
+  v_secs INTEGER;
+BEGIN
+  SELECT user_id INTO v_user FROM public.phone_tokens
+  WHERE token_hash = encode(sha256(convert_to(p_secret, 'UTF8')), 'hex');
+  IF v_user IS NULL THEN
+    RAISE EXCEPTION 'unknown secret';
+  END IF;
+
+  v_site := CASE v_app
+    WHEN 'youtube' THEN 'extra:phone:youtube.com'
+    WHEN 'whatsapp' THEN 'extra:phone:whatsapp.com'
+  END;
+  IF v_site IS NULL THEN
+    RAISE EXCEPTION 'unknown app';
+  END IF;
+
+  IF p_event = 'open' THEN
+    -- p_time is the phone's local time, so its first ten characters are the local day.
+    -- An open that never got its close is replaced and counts as nothing.
+    INSERT INTO public.phone_open (user_id, app, opened_at, day)
+    VALUES (v_user, v_app, v_at, left(p_time, 10)::date)
+    ON CONFLICT (user_id, app)
+    DO UPDATE SET opened_at = EXCLUDED.opened_at, day = EXCLUDED.day;
+    RETURN 0;
+  ELSIF p_event = 'close' THEN
+    DELETE FROM public.phone_open
+    WHERE user_id = v_user AND app = v_app
+    RETURNING * INTO v_open;
+    IF NOT FOUND THEN
+      RETURN 0;
+    END IF;
+    v_secs := least(floor(extract(epoch FROM v_at - v_open.opened_at)), v_cap)::integer;
+    IF v_secs < 1 THEN
+      RETURN 0;
+    END IF;
+    INSERT INTO public.site_usage AS s (user_id, day, site, seconds)
+    VALUES (v_user, v_open.day, v_site, v_secs)
+    ON CONFLICT (user_id, day, site)
+    DO UPDATE SET seconds = s.seconds + v_secs;
+    RETURN v_secs;
+  END IF;
+  RAISE EXCEPTION 'unknown event';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+GRANT EXECUTE ON FUNCTION phone_event(TEXT, TEXT, TEXT, TEXT) TO anon;
+```
+
+Then register a secret for the phone. Make a long random one (for example with `openssl rand -hex 32`), keep it for the Shortcuts setup, and run this with it filled in:
+
+```sql
+INSERT INTO phone_tokens (token_hash, user_id)
+VALUES (
+  encode(sha256(convert_to('YOUR-PHONE-SECRET', 'UTF8')), 'hex'),
+  (SELECT id FROM auth.users LIMIT 1)
+);
+```
+
 6. Create **ONE** user account in **Authentication → Users** with email and password
 
 ### Step 2: Install the Extension
@@ -327,6 +420,37 @@ Click **Analytics** in the popup to see how much time you spend on each daily-li
 - No database change is needed: the time is stored in the existing `site_usage` table under its own site name (`extra:youtube.com`, `extra:whatsapp.com`). Numbers start from the day you install this version.
 - Rebuild and reload the extension on every device you use. A device still on an older version doesn't know these names and shows that time on its Analytics page as if it were limit-site time. The daily limit itself is not affected.
 - If you add YouTube or WhatsApp to your daily-limit sites, that site counts against the limit from then on like any other. Time recorded before the change stays where it was, so nothing is counted twice.
+
+#### iPhone YouTube and WhatsApp
+
+Time in the YouTube and WhatsApp apps on your iPhone can be shown too, as its own **YouTube (phone)** and **WhatsApp (phone)** columns. Like the browser figures, it never counts against your daily limit. The phone reports each time an app is opened and closed, and the database turns each open and close pair into seconds.
+
+1. Run the **iPhone app time** SQL block in [Step 1](#step-1-set-up-supabase) and register your phone secret.
+2. Check it works from a terminal before touching the phone. Send an open, wait a few seconds, then send the same request with `"p_event": "close"` and a later time; the second reply is the number of seconds added:
+
+   ```bash
+   curl -X POST "https://YOUR-PROJECT.supabase.co/rest/v1/rpc/phone_event" \
+     -H "apikey: YOUR-ANON-KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"p_secret":"YOUR-PHONE-SECRET","p_app":"youtube","p_event":"open","p_time":"2026-10-12T14:00:00+05:30"}'
+   ```
+
+3. On the iPhone, open **Shortcuts → Automation → +** and create four automations: YouTube opened, YouTube closed, WhatsApp opened, WhatsApp closed. For each one choose **App**, pick the app, tick only **Is Opened** or only **Is Closed**, choose **Run Immediately**, then **New Blank Automation** with these actions:
+   - **Date**: Current Date
+   - **Format Date**: Date Format **ISO 8601**, with **Include ISO 8601 Time** on
+   - **Get Contents of URL**: URL `https://YOUR-PROJECT.supabase.co/rest/v1/rpc/phone_event`, Method **POST**, Headers `apikey` = your anon key and `Content-Type` = `application/json`, Request Body **JSON** with four text fields:
+     - `p_secret`: your phone secret
+     - `p_app`: `youtube` or `whatsapp`
+     - `p_event`: `open` or `close`
+     - `p_time`: the **Formatted Date** from the action above
+
+Good to know:
+
+- The URL and anon key are the same values the extension uses. The anon key alone can't do anything here; the secret is what lets the phone add time, and it can only add time for these two apps.
+- One session adds at most 2 hours (`v_cap` in the function), so a missed close can't add a whole day. If an app is opened again before its close arrived, the earlier open counts as nothing.
+- A session counts on the day it started, by the phone's local date, even if it runs past midnight.
+- Requests made while the phone is offline are lost, so that session isn't counted.
+- To stop a phone from adding time, delete its row from `phone_tokens`.
 
 ### Blocking searches for people
 
