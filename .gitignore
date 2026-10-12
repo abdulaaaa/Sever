@@ -37,3 +37,6 @@ node_modules/
 # Test files
 coverage/
 .nyc_output/
+
+# Claude Code local config
+.claude/
