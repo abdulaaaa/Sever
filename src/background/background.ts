@@ -4,7 +4,7 @@ import {
   decide,
   matches,
   isBudgetSite,
-  budgetSiteFor,
+  trackingFor,
   watchTerms,
   isWatchScope,
   isYouTube,
@@ -358,7 +358,8 @@ async function track(): Promise<ExtensionState> {
         pendingSiteUsage?: PendingSiteUsage;
       };
       const day = dayKey();
-      pendingUsage[day] = (pendingUsage[day] || 0) + secs;
+      // YouTube and WhatsApp are recorded per site only, so they never use up the daily limit.
+      if (!tracking.extra) pendingUsage[day] = (pendingUsage[day] || 0) + secs;
       if (tracking.site) {
         const sites = (pendingSiteUsage[day] ||= {});
         sites[tracking.site] = (sites[tracking.site] || 0) + secs;
@@ -369,21 +370,12 @@ async function track(): Promise<ExtensionState> {
 
   const st = await loadState();
   const url = await activeUrl(st);
-  let next: TrackingState | null = null;
-  if (url && st.focus?.phase === 'focus' && isYouTube(url)) {
-    // YouTube while the timer runs is logged with the session, not counted against the daily limit.
-    next = { since: now, focusVideo: true };
-  } else if (url && !st.out) {
-    const site = budgetSiteFor(url, st.settings);
-    if (site) next = { since: now, site };
-  }
-
-  await chrome.storage.session.set({ tracking: next });
+  await chrome.storage.session.set({ tracking: trackingFor(url, st, now) });
   return st;
 }
 
 // Is time being counted against the daily limit right now?
-const countingNow = (t?: TrackingState | null): boolean => !!t && !t.focusVideo;
+const countingNow = (t?: TrackingState | null): boolean => !!t && !t.focusVideo && !t.extra;
 
 // ---------- lock-in mode ----------
 const ICON = chrome.runtime.getURL('src/assets/icons/128.png');
