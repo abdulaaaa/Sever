@@ -5,15 +5,15 @@ import type { SiteUsageRow, UsageDayRow } from '../types';
 // Monday 28 September to Wednesday 7 October 2026: one full week and three days.
 const START = new Date(2026, 8, 28);
 const TODAY = new Date(2026, 9, 7);
-const EXTRA = ['youtube.com', 'whatsapp.com'];
+const EXTRA = ['extra:youtube.com', 'extra:whatsapp.com'];
 
 const SITE_ROWS: SiteUsageRow[] = [
   { day: '2026-09-30', site: 'reddit.com', seconds: 600 },
-  { day: '2026-09-30', site: 'youtube.com', seconds: 1200 },
-  { day: '2026-10-06', site: 'youtube.com', seconds: 900 }
+  { day: '2026-09-30', site: 'extra:youtube.com', seconds: 1200 },
+  { day: '2026-10-06', site: 'extra:youtube.com', seconds: 900 }
 ];
 const TOTAL_ROWS: UsageDayRow[] = [{ day: '2026-09-30', seconds: 600 }];
-const PENDING_SITE = { '2026-09-30': { 'whatsapp.com': 300, 'youtube.com': 60 } };
+const PENDING_SITE = { '2026-09-30': { 'extra:whatsapp.com': 300, 'extra:youtube.com': 60 } };
 
 const build = (extra?: string[]) =>
   buildUsage(START, TODAY, SITE_ROWS, TOTAL_ROWS, PENDING_SITE, {}, 7, extra);
@@ -37,7 +37,7 @@ describe('buildUsage', () => {
 
   it('adds server rows and unsynced time for tracked-only sites', () => {
     const day = build(EXTRA).days[2];
-    expect(day.extra).toEqual({ 'youtube.com': 1260, 'whatsapp.com': 300 });
+    expect(day.extra).toEqual({ 'extra:youtube.com': 1260, 'extra:whatsapp.com': 300 });
     expect(day.totalAll).toBe(2160);
   });
 
@@ -55,10 +55,34 @@ describe('buildUsage', () => {
     expect(buildUsage(START, TODAY, [], [], {}, {}, 7, EXTRA).firstData).toBe(-1);
   });
 
+  it('never counts time twice when a tracked-only site is also a limit site', () => {
+    // YouTube was added to the daily-limit sites: its limit time has the plain key and is
+    // in the recorded total, while earlier tracked-only time keeps its own key.
+    const data = buildUsage(
+      START,
+      TODAY,
+      [
+        { day: '2026-09-30', site: 'youtube.com', seconds: 500 },
+        { day: '2026-09-30', site: 'extra:youtube.com', seconds: 200 }
+      ],
+      [{ day: '2026-09-30', seconds: 500 }],
+      {},
+      {},
+      7,
+      EXTRA
+    );
+    const day = data.days[2];
+    expect(data.series).toEqual(['youtube.com']);
+    expect(day.values).toEqual({ 'youtube.com': 500 });
+    expect(day.total).toBe(500);
+    expect(day.extra).toEqual({ 'extra:youtube.com': 200 });
+    expect(day.totalAll).toBe(700);
+  });
+
   it('treats every site as a limit site when no tracked-only sites are given', () => {
     const data = build();
     const day = data.days[2];
-    expect(data.series).toEqual(['youtube.com', 'reddit.com', 'whatsapp.com']);
+    expect(data.series).toEqual(['extra:youtube.com', 'reddit.com', 'extra:whatsapp.com']);
     expect(day.total).toBe(2160);
     expect(day.totalAll).toBe(2160);
     expect(day.extra).toEqual({});
@@ -71,7 +95,7 @@ describe('weekAverage', () => {
     expect(week.n).toBe(5);
     expect(week.total).toBe(120);
     expect(week.values).toEqual({ 'reddit.com': 120 });
-    expect(week.extra).toEqual({ 'youtube.com': 252, 'whatsapp.com': 60 });
+    expect(week.extra).toEqual({ 'extra:youtube.com': 252, 'extra:whatsapp.com': 60 });
     expect(week.totalAll).toBe(432);
   });
 
@@ -79,7 +103,7 @@ describe('weekAverage', () => {
     const week = weekAverage(build(EXTRA), 1)!;
     expect(week.n).toBe(3);
     expect(week.total).toBe(0);
-    expect(week.extra).toEqual({ 'youtube.com': 300, 'whatsapp.com': 0 });
+    expect(week.extra).toEqual({ 'extra:youtube.com': 300, 'extra:whatsapp.com': 0 });
     expect(week.totalAll).toBe(300);
   });
 

@@ -17,7 +17,7 @@ export interface UsageDay {
 export interface UsageData {
   days: UsageDay[];
   series: string[]; // sites with their own series, most used first, then OTHER and UNSPLIT if present
-  extra: string[]; // tracked-only sites, kept apart from series
+  extra: string[]; // site keys of the tracked-only sites, kept apart from series
   firstData: number; // index of the first day with any time recorded, or -1
 }
 

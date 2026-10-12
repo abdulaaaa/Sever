@@ -1,4 +1,5 @@
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS } from '../lib/utils/defaults';
+import { EXTRA_PREFIX } from '../lib/utils/config';
 import {
   loadState,
   decide,
@@ -363,8 +364,9 @@ async function track(): Promise<ExtensionState> {
       // YouTube and WhatsApp are recorded per site only, so they never use up the daily limit.
       if (!tracking.extra) pendingUsage[day] = (pendingUsage[day] || 0) + secs;
       if (tracking.site) {
+        const key = tracking.extra ? EXTRA_PREFIX + tracking.site : tracking.site;
         const sites = (pendingSiteUsage[day] ||= {});
-        sites[tracking.site] = (sites[tracking.site] || 0) + secs;
+        sites[key] = (sites[key] || 0) + secs;
       }
       await chrome.storage.local.set({ pendingUsage, pendingSiteUsage });
     }
