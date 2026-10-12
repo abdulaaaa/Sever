@@ -86,11 +86,8 @@
   async function render(): Promise<void> {
     const st = await loadState();
 
-    if (!st.session) {
-      notice = "Not signed in: using your saved blocks. Sign in from Settings to sync both profiles.";
-      showNotice = true;
-    } else if (st.lastError) {
-      notice = "Couldn't reach the database. Your saved blocks still apply.";
+    if (st.lastError) {
+      notice = "Couldn't reach the database. Your local blocks still apply.";
       showNotice = true;
     }
 

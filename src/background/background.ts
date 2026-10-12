@@ -10,7 +10,16 @@ import {
   schedActive,
   dayKey
 } from '../lib/utils/common';
-import { api, getSession } from '../lib/services/supa';
+import {
+  getSession,
+  fetchBlocks,
+  fetchSettings,
+  fetchUsage,
+  insertBlocks,
+  insertSettings,
+  addUsage,
+  flushPendingAttempts
+} from '../lib/services/supa';
 import type {
   Block,
   Settings,
@@ -39,7 +48,7 @@ async function flushPending(): Promise<number | null> {
   const pendingUsage = data.pendingUsage || {};
 
   if (pendingAttempts.length) {
-    await api("attempts", { method: "POST", body: pendingAttempts, prefer: "return=minimal" });
+    await flushPendingAttempts(pendingAttempts);
     await chrome.storage.local.set({ pendingAttempts: [] });
   }
 
@@ -47,7 +56,7 @@ async function flushPending(): Promise<number | null> {
   for (const day of Object.keys(pendingUsage)) {
     while (pendingUsage[day] >= 1) {
       const send = Math.min(600, Math.floor(pendingUsage[day]));
-      const total = await api<number>("rpc/add_usage", { method: "POST", body: { p_day: day, p_seconds: send } });
+      const total = await addUsage(day, send);
       pendingUsage[day] -= send;
       await chrome.storage.local.set({ pendingUsage });
       if (day === dayKey()) latest = total;
@@ -69,9 +78,6 @@ interface UsageRow {
 }
 
 async function sync(): Promise<void> {
-  const session = await getSession();
-  if (!session) return;
-
   try {
     // Move counts from the previous version into the database.
     const { visits } = await chrome.storage.local.get("visits") as { visits?: Record<string, number[]> };
@@ -87,18 +93,18 @@ async function sync(): Promise<void> {
     await flushPending();
     const day = dayKey();
     let [blocks, settingsRows, usageRows] = await Promise.all([
-      api<Block[]>("blocks?select=*&order=created_at.asc"),
-      api<SettingsRow[]>("settings?select=*"),
-      api<UsageRow[]>(`usage?select=seconds&day=eq.${day}`)
+      fetchBlocks(),
+      fetchSettings(),
+      fetchUsage(day)
     ]);
 
     // First sign-in ever: copy the starting blocks and settings into the database.
     if (!settingsRows.length) {
       if (!blocks.length) {
         const rows = DEFAULT_BLOCKS.map(({ id, ...b }) => b);
-        blocks = await api<Block[]>("blocks", { method: "POST", body: rows, prefer: "return=representation" });
+        blocks = await insertBlocks(rows);
       }
-      settingsRows = await api<SettingsRow[]>("settings", { method: "POST", body: [DEFAULT_SETTINGS], prefer: "return=representation" });
+      settingsRows = await insertSettings([DEFAULT_SETTINGS]);
     }
 
     const s = settingsRows[0];
@@ -219,6 +225,7 @@ async function track(): Promise<ExtensionState> {
 
   const st = await loadState();
   const on = !st.out && (await onBudgetSiteNow(st));
+
   await chrome.storage.session.set({ tracking: on ? { since: now } : null });
   return st;
 }

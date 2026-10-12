@@ -2,17 +2,10 @@
   import { onMount } from 'svelte';
   import { loadState, cleanTarget, scheduleLabel, schedActive, normHost, isSettingsLocked, nextUnlockTime, summarize } from '../../lib/utils/common';
   import { DEV_MODE } from '../../lib/utils/config';
-  import { signIn, signOut, api, loadAttempts, verifyPassword } from '../../lib/services/supa';
+  import { loadAttempts, updateSettings, insertBlock, deleteBlock, updateBlock } from '../../lib/services/supa';
   import type { ExtensionState, Block, Schedule, AttemptSummary } from '../../lib/types';
 
   let st: ExtensionState | null = $state(null);
-  let signedIn = $state(false);
-  let email = $state('');
-  let password = $state('');
-  let accountMsg = $state('');
-  let accountMsgError = $state(false);
-  let userEmail = $state('');
-  let syncStatus = $state('');
   let toastText = $state('');
   let toastVisible = $state(false);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -88,12 +81,12 @@
   }
 
   function addBlock(row: Partial<Block>): Promise<unknown> {
-    return api('blocks', { method: 'POST', body: [{ person: null, schedule: null, ...row }], prefer: 'return=minimal' });
+    return insertBlock({ person: null, schedule: null, ...row });
   }
 
   function removeBlock(b: Block, label?: string): void {
     if (!confirm(`Remove ${label || b.target}?`)) return;
-    run(() => api(`blocks?id=eq.${b.id}`, { method: 'DELETE' }), 'Removed.');
+    run(() => deleteBlock(b.id), 'Removed.');
   }
 
   function editPersonName(oldName: string): void {
@@ -103,15 +96,13 @@
     const blocksToUpdate = st!.blocks.filter((b) => b.person === oldName);
     run(async () => {
       for (const b of blocksToUpdate) {
-        await api(`blocks?id=eq.${b.id}`, { method: 'PATCH', body: { person: trimmed }, prefer: 'return=minimal' });
+        await updateBlock(b.id, { person: trimmed });
       }
     }, `Renamed to "${trimmed}".`);
   }
 
   function saveSettings(patch: Record<string, unknown>): Promise<unknown> {
-    return api(`settings?user_id=eq.${st!.session!.user.id}`, {
-      method: 'PATCH', body: { ...patch, updated_at: new Date().toISOString() }, prefer: 'return=minimal'
-    });
+    return updateSettings(st!.session!.user.id, patch);
   }
 
   function exists(kind: string, target: string, extra: (b: Block) => boolean = () => true): boolean {
@@ -120,16 +111,6 @@
 
   async function render(): Promise<void> {
     st = await loadState();
-    signedIn = !!st.session;
-
-    if (signedIn) {
-      userEmail = st.session!.user.email;
-      syncStatus = st.lastError
-        ? "Couldn't reach the database: " + st.lastError
-        : st.syncedAt
-          ? 'Last synced ' + new Date(st.syncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-          : 'Not synced yet';
-    }
 
     // Daily limit
     limitValue = st.settings.daily_limit_minutes;
@@ -171,31 +152,10 @@
       isLocked = false;
       lockNextUnlock = '';
     }
+
   }
 
   // Form handlers
-  async function handleSignIn(e: Event): Promise<void> {
-    e.preventDefault();
-    accountMsg = 'Signing in...';
-    accountMsgError = false;
-    try {
-      await signIn(email.trim(), password);
-      password = '';
-      accountMsg = 'Signed in. Syncing...';
-      await syncNow();
-      accountMsg = '';
-      await render();
-    } catch (err) {
-      accountMsg = "Couldn't sign in: " + (err as Error).message;
-      accountMsgError = true;
-    }
-  }
-
-  async function handleSignOut(): Promise<void> {
-    if (!confirm("Sign out? Your saved blocks keep working, but changes won't sync.")) return;
-    await signOut();
-    await render();
-  }
 
   async function handleSyncNow(): Promise<void> {
     await syncNow();
@@ -323,33 +283,17 @@
     }
   }
 
-  async function confirmPassword(): Promise<boolean> {
-    if (DEV_MODE) return true;  // Skip in dev mode
-    const pwd = prompt('Enter your password to confirm:');
-    if (!pwd) {
-      toast('Cancelled.');
-      return false;
-    }
-    const valid = await verifyPassword(pwd);
-    if (!valid) {
-      toast('Incorrect password.');
-      return false;
-    }
-    return true;
-  }
 
   async function handleLockToggle(): Promise<void> {
     if (lockEnabled) {
-      // Turning off - require password
-      if (!(await confirmPassword())) return;
+      // Turning off
       run(() => saveSettings({ settings_unlock_schedule: null }), 'Lock disabled.');
     } else {
-      // Turning on - require password
+      // Turning on
       if (lockDays.length === 0) {
         toast('Pick at least one day.');
         return;
       }
-      if (!(await confirmPassword())) return;
       const schedule: Schedule = { start: lockStart, end: lockEnd, days: [...lockDays].sort() };
       run(() => saveSettings({ settings_unlock_schedule: schedule }), 'Lock enabled.');
     }
@@ -361,7 +305,6 @@
       toast('Pick at least one day.');
       return;
     }
-    if (!(await confirmPassword())) return;
     const schedule: Schedule = { start: lockStart, end: lockEnd, days: [...lockDays].sort() };
     run(() => saveSettings({ settings_unlock_schedule: schedule }), 'Schedule saved.');
   }
@@ -567,28 +510,6 @@
     padding: 2px 4px 2px 10px;
     font-size: 13px;
   }
-  .account {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .signin {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .signin input {
-    flex: 1 1 180px;
-  }
-  .msg {
-    font-size: 13px;
-    margin-top: 8px;
-  }
-  .msg.err {
-    color: var(--danger);
-  }
   .limit-row {
     display: flex;
     align-items: center;
@@ -726,34 +647,7 @@
 
 <div class="wrap">
   <h1>Sever</h1>
-  <p class="lede">Changes save to your database and apply in every Chrome profile where you're signed in, within about a minute.</p>
-
-  <!-- Account Card -->
-  <div class="card">
-    <h2>Account</h2>
-    {#if !signedIn}
-      <p class="muted">Sign in with the email and password you created in Supabase. Until you do, the extension keeps using your saved blocks.</p>
-      <form class="signin" onsubmit={handleSignIn}>
-        <input type="email" bind:value={email} placeholder="Email" required autocomplete="username">
-        <input type="password" bind:value={password} placeholder="Password" required autocomplete="current-password">
-        <button class="primary">Sign in</button>
-      </form>
-    {:else}
-      <div class="account">
-        <div>
-          <div>Signed in as <b>{userEmail}</b></div>
-          <div class="muted">{syncStatus}</div>
-        </div>
-        <div>
-          <button onclick={handleSyncNow}>Sync now</button>
-          <button onclick={handleSignOut}>Sign out</button>
-        </div>
-      </div>
-    {/if}
-    {#if accountMsg}
-      <div class="msg" class:err={accountMsgError}>{accountMsg}</div>
-    {/if}
-  </div>
+  <p class="lede">Changes sync to your database and apply across all Chrome profiles within about a minute.</p>
 
   {#if isLocked}
     <div class="lock-banner">
@@ -769,10 +663,10 @@
   {/if}
 
   <!-- Settings Lock Card - locked when outside unlock window -->
-  <fieldset disabled={!signedIn || isLocked}>
+  <fieldset disabled={isLocked}>
     <div class="card lock-card">
       <h2>Settings lock</h2>
-      <p class="muted">Lock settings outside of a scheduled time window. Requires password to enable or change.</p>
+      <p class="muted">Lock settings outside of a scheduled time window. Settings can only be changed during unlock hours.</p>
       <div class="lock-toggle">
         <input type="checkbox" id="lock-enabled" checked={lockEnabled} onchange={handleLockToggle}>
         <label for="lock-enabled">{lockEnabled ? 'Lock is enabled' : 'Enable lock'}</label>
@@ -795,7 +689,7 @@
   </fieldset>
 
   <!-- Daily Limit Card - locked when settings locked -->
-  <fieldset disabled={!signedIn || isLocked}>
+  <fieldset disabled={isLocked}>
     <div class="card">
       <h2>Daily social media limit</h2>
       <p class="muted">Time on these sites is added together, across both profiles. When it runs out, they're blocked until midnight.</p>
@@ -820,7 +714,7 @@
   </fieldset>
 
   <!-- Block cards - can add blocks even when locked -->
-  <fieldset disabled={!signedIn}>
+  <fieldset>
     <!-- People Card -->
     <div class="card">
       <h2>People</h2>
@@ -865,7 +759,6 @@
               <tr>
                 <th>Page</th>
                 <th>Today</th>
-                <th>Week</th>
                 <th>Total</th>
               </tr>
             </thead>
@@ -875,14 +768,12 @@
                   <tr class="person">
                     <td>{row.name}</td>
                     <td>{row.today}</td>
-                    <td>{row.week}</td>
                     <td>{row.total}</td>
                   </tr>
                 {:else}
                   <tr>
                     <td>{row.target}</td>
                     <td>{row.today || ''}</td>
-                    <td>{row.week || ''}</td>
                     <td>{row.total || ''}</td>
                   </tr>
                 {/if}
@@ -958,7 +849,7 @@
   </fieldset>
 
   <!-- Always Allowed Card - locked when settings locked -->
-  <fieldset disabled={!signedIn || isLocked}>
+  <fieldset disabled={isLocked}>
     <div class="card">
       <h2>Always allowed</h2>
       <p class="muted">These always open, even during scheduled blocks or after the daily limit, and don't use up your time.</p>

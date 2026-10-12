@@ -1,147 +1,174 @@
-// A small Supabase client: sign-in, token refresh and database requests.
+// Supabase client using official SDK for type-safe database operations
+import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../utils/config';
-import type { Session, AttemptRecord, AttemptsMap } from '../types';
+import type { Session, Block, AttemptRecord, AttemptsMap } from '../types';
 
-let refreshing: Promise<Session> | null = null;
+// Initialize SDK client
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: true }
+});
 
-interface AuthResponse {
-  access_token: string;
-  refresh_token: string;
-  expires_at?: number;
-  expires_in?: number;
-  user: {
-    id: string;
-    email: string;
-  };
-}
-
-interface AuthError extends Error {
-  status?: number;
-}
-
-async function saveSession(j: AuthResponse): Promise<Session> {
-  const session: Session = {
-    access_token: j.access_token,
-    refresh_token: j.refresh_token,
-    expires_at: j.expires_at || Math.floor(Date.now() / 1000) + (j.expires_in || 3600),
-    user: { id: j.user.id, email: j.user.email }
-  };
-  await chrome.storage.local.set({ session });
-  return session;
-}
-
-async function authRequest(path: string, body: Record<string, string>): Promise<AuthResponse> {
-  const r = await fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
-    method: "POST",
-    headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const err: AuthError = new Error(j.error_description || j.msg || j.message || `Request failed (${r.status})`);
-    err.status = r.status;
-    throw err;
-  }
-  return j;
-}
-
-export async function signIn(email: string, password: string): Promise<{ id: string; email: string }> {
-  const j = await authRequest("token?grant_type=password", { email, password });
-  return (await saveSession(j)).user;
-}
-
-export async function verifyPassword(password: string): Promise<boolean> {
-  const session = await getSession();
-  if (!session) return false;
-  try {
-    await authRequest("token?grant_type=password", { email: session.user.email, password });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function signOut(): Promise<void> {
-  const { session } = await chrome.storage.local.get("session") as { session?: Session };
-  await chrome.storage.local.remove("session");
-  if (session) {
-    fetch(`${SUPABASE_URL}/auth/v1/logout`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${session.access_token}` }
-    }).catch(() => {});
-  }
-}
-
+// Session management (still use chrome.storage for persistence)
 export async function getSession(): Promise<Session | null> {
   const { session } = await chrome.storage.local.get("session") as { session?: Session };
   return session || null;
 }
 
-async function accessToken(): Promise<string | null> {
-  const s = await getSession();
-  if (!s) return null;
-  if (s.expires_at * 1000 - Date.now() > 60_000) return s.access_token;
-  if (!refreshing) {
-    refreshing = authRequest("token?grant_type=refresh_token", { refresh_token: s.refresh_token })
-      .then(saveSession)
-      .catch(async (e: AuthError) => {
-        // A rejected refresh token means the sign-in is no longer valid.
-        if (e.status === 400 || e.status === 401) await chrome.storage.local.remove("session");
-        throw e;
-      })
-      .finally(() => { refreshing = null; });
+async function setSupabaseSession(session: Session | null): Promise<void> {
+  if (session) {
+    await supabase.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token
+    });
   }
-  return (await refreshing).access_token;
 }
 
-interface ApiOptions {
-  method?: string;
-  body?: unknown;
-  prefer?: string;
-  range?: string;
+// Helper to execute database operations with auth
+async function withAuth<T>(fn: () => Promise<T>): Promise<T> {
+  const session = await getSession();
+  if (!session) throw new Error("signed-out");
+
+  await setSupabaseSession(session);
+
+  // Check if token needs refresh
+  const now = Math.floor(Date.now() / 1000);
+  if (session.expires_at - now < 60) {
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token: session.refresh_token
+    });
+    if (error) {
+      await chrome.storage.local.remove("session");
+      throw new Error("Session expired");
+    }
+    if (data.session) {
+      const newSession: Session = {
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_at: Math.floor(Date.now() / 1000) + (data.session.expires_in || 3600),
+        user: { id: data.session.user.id, email: data.session.user.email || '' }
+      };
+      await chrome.storage.local.set({ session: newSession });
+    }
+  }
+
+  return fn();
 }
 
-// Request to the database. path is relative to /rest/v1/.
-export async function api<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
-  const { method = "GET", body, prefer, range } = options;
-  const token = await accessToken();
-  if (!token) throw new Error("signed-out");
+// Database operations
+export async function fetchBlocks(): Promise<Block[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase
+      .from('blocks')
+      .select('*')
+      .order('created_at', { ascending: true });
 
-  const headers: Record<string, string> = {
-    apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json"
-  };
-  if (prefer) headers.Prefer = prefer;
-  if (range) headers.Range = range;
-
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body)
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data || [];
   });
-
-  if (!r.ok) throw new Error(`Database error ${r.status}: ${(await r.text()).slice(0, 200)}`);
-
-  const text = await r.text();
-  return text ? JSON.parse(text) : (null as unknown as T);
 }
 
-// Fetch every row of a query, 1000 at a time.
-export async function apiAll<T>(path: string): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += 1000) {
-    const page = await api<T[]>(path, { range: `${from}-${from + 999}` });
-    rows.push(...page);
-    if (page.length < 1000) return rows;
-  }
+export async function fetchSettings(): Promise<any[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase.from('settings').select('*');
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data || [];
+  });
 }
 
-// Record attempts on blocked people pages. Falls back to a local queue when offline.
+export async function fetchUsage(day: string): Promise<any[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase
+      .from('usage')
+      .select('seconds')
+      .eq('day', day);
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data || [];
+  });
+}
+
+export async function insertBlocks(rows: any[]): Promise<Block[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase
+      .from('blocks')
+      .insert(rows)
+      .select();
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data || [];
+  });
+}
+
+export async function insertSettings(rows: any[]): Promise<any[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase
+      .from('settings')
+      .insert(rows)
+      .select();
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data || [];
+  });
+}
+
+export async function updateSettings(userId: string, updates: any): Promise<void> {
+  return withAuth(async () => {
+    const { error } = await supabase
+      .from('settings')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+  });
+}
+
+export async function insertBlock(row: any): Promise<void> {
+  return withAuth(async () => {
+    const { error } = await supabase.from('blocks').insert([row]);
+    if (error) throw new Error(`Database error: ${error.message}`);
+  });
+}
+
+export async function deleteBlock(id: string): Promise<void> {
+  return withAuth(async () => {
+    const { error} = await supabase.from('blocks').delete().eq('id', id);
+    if (error) throw new Error(`Database error: ${error.message}`);
+  });
+}
+
+export async function updateBlock(id: string, updates: any): Promise<void> {
+  return withAuth(async () => {
+    const { error } = await supabase.from('blocks').update(updates).eq('id', id);
+    if (error) throw new Error(`Database error: ${error.message}`);
+  });
+}
+
+export async function addUsage(day: string, seconds: number): Promise<number> {
+  return withAuth(async () => {
+    const { data, error } = await supabase.rpc('add_usage', {
+      p_day: day,
+      p_seconds: seconds
+    });
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data;
+  });
+}
+
+export async function flushPendingAttempts(attempts: AttemptRecord[]): Promise<void> {
+  return withAuth(async () => {
+    const { error } = await supabase.from('attempts').insert(attempts);
+    if (error) throw new Error(`Database error: ${error.message}`);
+  });
+}
+
 export async function recordAttempt(target: string): Promise<void> {
   const row: AttemptRecord = { target, at: new Date().toISOString() };
   try {
-    await api("attempts", { method: "POST", body: [row], prefer: "return=minimal" });
+    await withAuth(async () => {
+      const { error } = await supabase.from('attempts').insert([row]);
+      if (error) throw error;
+    });
   } catch {
     const { pendingAttempts = [] } = await chrome.storage.local.get("pendingAttempts") as { pendingAttempts?: AttemptRecord[] };
     pendingAttempts.push(row);
@@ -154,7 +181,6 @@ interface AttemptRow {
   at: string;
 }
 
-// All attempt times, grouped by target: { "x.com/someone": [ms, ms, ...] }
 export async function loadAttempts(target?: string): Promise<AttemptsMap> {
   const out: AttemptsMap = {};
   const add = (t: string, at: string): void => {
@@ -163,9 +189,25 @@ export async function loadAttempts(target?: string): Promise<AttemptsMap> {
 
   let server: AttemptRow[] | null = null;
   try {
-    const q = "attempts?select=target,at&order=at.asc" + (target ? "&target=eq." + encodeURIComponent(target) : "");
-    server = await apiAll<AttemptRow>(q);
-    if (!target) await chrome.storage.local.set({ attemptsCache: server });
+    server = await withAuth(async () => {
+      let query = supabase
+        .from('attempts')
+        .select('target, at')
+        .order('at', { ascending: true });
+
+      if (target) {
+        query = query.eq('target', target);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      if (!target && data) {
+        await chrome.storage.local.set({ attemptsCache: data });
+      }
+
+      return data || [];
+    });
   } catch {
     const { attemptsCache } = await chrome.storage.local.get("attemptsCache") as { attemptsCache?: AttemptRow[] };
     server = attemptsCache || [];
