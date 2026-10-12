@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { loadState, cleanTarget, scheduleLabel, schedActive, normHost, isSettingsLocked, nextUnlockTime, summarize } from '../../lib/utils/common';
-  import { DEV_MODE } from '../../lib/utils/config';
   import { loadAttempts, updateSettings, insertBlock, deleteBlock, updateBlock } from '../../lib/services/supa';
   import type { ExtensionState, Block, Schedule, AttemptSummary } from '../../lib/types';
 
@@ -49,7 +48,6 @@
     name: string;
     target?: string;
     today: number;
-    week: number;
     total: number;
   }> = $state([]);
 
@@ -166,12 +164,6 @@
   }
 
   // Form handlers
-
-  async function handleSyncNow(): Promise<void> {
-    await syncNow();
-    await render();
-    toast('Synced.');
-  }
 
   function handleLimitSubmit(e: Event): void {
     e.preventDefault();
@@ -341,7 +333,6 @@
           isPerson: true,
           name,
           today: sum('today'),
-          week: sum('week'),
           total: sum('total')
         });
 
@@ -351,7 +342,6 @@
             name: '',
             target: entries[i].target,
             today: allCounts[i].today,
-            week: allCounts[i].week,
             total: allCounts[i].total
           });
         }

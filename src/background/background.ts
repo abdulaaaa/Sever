@@ -12,7 +12,6 @@ import {
   dayKey
 } from '../lib/utils/common';
 import {
-  getSession,
   fetchBlocks,
   fetchSettings,
   fetchUsage,
@@ -86,16 +85,6 @@ async function flushSiteUsage(): Promise<void> {
     if (day !== dayKey()) delete pendingSiteUsage[day];
   }
   await chrome.storage.local.set({ pendingSiteUsage });
-}
-
-interface SettingsRow {
-  daily_limit_minutes: number;
-  budget_sites: string[];
-  settings_unlock_schedule: { start: string; end: string; days: number[] } | null;
-}
-
-interface UsageRow {
-  seconds: number;
 }
 
 async function sync(): Promise<void> {

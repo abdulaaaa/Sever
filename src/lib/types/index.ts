@@ -101,44 +101,13 @@ export interface TrackingState {
   site?: string; // budget site being counted
 }
 
-// Message types for chrome.runtime.sendMessage
-export type MessageType =
-  | 'sync'
-  | 'getTimeLeft'
-  | 'checkNow'
-  | 'isTrackingNow'
-  | 'shouldShowCountdown';
-
-export interface SyncMessage {
-  type: 'sync';
-}
-
-export interface GetTimeLeftMessage {
-  type: 'getTimeLeft';
-}
-
+// Replies to chrome.runtime.sendMessage
 export interface GetTimeLeftResponse {
   remaining: number;
   limit: number;
   used: number;
   out: boolean;
   tracking: boolean;
-}
-
-export interface CheckNowMessage {
-  type: 'checkNow';
-}
-
-export interface IsTrackingNowMessage {
-  type: 'isTrackingNow';
-}
-
-export interface IsTrackingNowResponse {
-  tracking: boolean;
-}
-
-export interface ShouldShowCountdownMessage {
-  type: 'shouldShowCountdown';
 }
 
 export interface ShouldShowCountdownResponse {

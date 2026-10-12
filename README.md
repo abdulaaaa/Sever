@@ -275,8 +275,6 @@ Lock your settings outside of a scheduled time window to prevent yourself from d
 - **Local-First**: Works offline, credentials never leave your machine
 - **Open Source**: Audit the code yourself
 
-See [PRIVACY.md](PRIVACY.md) for complete details.
-
 ## Development
 
 ### Tech Stack
@@ -375,10 +373,6 @@ sever/
 - The session auto-refreshes, but if it fails, run the console script again
 - Check that your Supabase user account still exists
 - Verify your Supabase project is still active
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
