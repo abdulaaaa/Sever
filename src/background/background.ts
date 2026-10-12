@@ -335,7 +335,9 @@ async function activeUrl(st: ExtensionState): Promise<string | null> {
   if (!win || !win.focused) return null;
   const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
   if (!tab?.url || decide(tab.url, st)) return null;
-  if (idle !== 'active' && !countsWhileIdle(tab.url, !!tab.audible, st)) return null;
+  // "audible" stays true for a tab muted in Chrome, so check that too.
+  const playing = !!tab.audible && !tab.mutedInfo?.muted;
+  if (idle !== 'active' && !countsWhileIdle(tab.url, playing, st)) return null;
   if (st.blocks.some((b) => b.kind === 'allow' && matches(tab.url!, b.target))) return null;
   return tab.url;
 }
@@ -753,7 +755,9 @@ const retrack = (): void => {
 
 chrome.tabs.onActivated.addListener(retrack);
 chrome.tabs.onUpdated.addListener((_id, info) => {
-  if (info.url || info.status === 'complete') retrack();
+  // Sound starting or stopping decides whether a video counts while you're idle.
+  if (info.url || info.status === 'complete' || info.audible !== undefined || info.mutedInfo)
+    retrack();
 });
 chrome.windows.onFocusChanged.addListener(retrack);
 chrome.idle.onStateChanged.addListener(retrack);
