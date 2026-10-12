@@ -319,6 +319,14 @@ Set up the session (using the console script) on each Chrome profile/device. Set
 
 Click **Analytics** in the popup to see how much time you spend on each daily-limit site per day, and the average per day for each week (Monday to Sunday). Per-site numbers start from the day you install this version; earlier days only show a combined total.
 
+**YouTube and WhatsApp Web** are recorded too, but they never count against your daily limit and keep being recorded after the limit is used up:
+
+- Time only counts while the tab is the active tab in the focused window. A YouTube video that is playing sound keeps counting when you aren't touching the mouse or keyboard; it stops when the video is paused or muted, or the screen locks.
+- YouTube during a lock-in session isn't counted here. It stays in the lock-in table as "On YouTube".
+- The tiles show two figures side by side: **Limit sites**, and **With YouTube + WhatsApp**. The switch above the chart adds both sites to the chart and the tables.
+- No database change is needed: the time is stored in the existing `site_usage` table under its own site name (`extra:youtube.com`, `extra:whatsapp.com`). Numbers start from the day you install this version.
+- If you add YouTube or WhatsApp to your daily-limit sites, that site counts against the limit from then on like any other. Time recorded before the change stays where it was, so nothing is counted twice.
+
 ### Blocking searches for people
 
 For everyone under **People**, looking them up is blocked as well as their pages:
