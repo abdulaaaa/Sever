@@ -371,6 +371,18 @@ const FOCUS_YT_RE = new RegExp(`^([a-z0-9-]+\\.)*youtube\\.com/${FOCUS_YT_BLOCKE
 
 export const isYouTube = (url: string): boolean => matches(url, YOUTUBE);
 
+// A YouTube video that is playing keeps counting with no mouse or keyboard input.
+// Not during a lock-in session, and not if YouTube is a budget site.
+export function countsWhileIdle(
+  url: string,
+  audible: boolean,
+  st: Pick<ExtensionState, 'settings' | 'focus'>
+): boolean {
+  return (
+    audible && isYouTube(url) && st.focus?.phase !== 'focus' && !isBudgetSite(url, st.settings)
+  );
+}
+
 // What to count time against while this address is in front, or null for nothing.
 export function trackingFor(
   url: string | null,

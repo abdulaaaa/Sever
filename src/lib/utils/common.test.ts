@@ -29,6 +29,7 @@ import {
   focusLeft,
   focusSites,
   trackingFor,
+  countsWhileIdle,
   decide
 } from './common';
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS, DEFAULT_FOCUS_CONFIG } from './defaults';
@@ -580,6 +581,27 @@ describe('trackingFor', () => {
     const settings: Settings = { ...DEFAULT_SETTINGS, budget_sites: ['youtube.com'] };
     expect(trackingFor(YT, state({ settings }), 5)).toEqual({ since: 5, site: 'youtube.com' });
     expect(trackingFor(YT, state({ settings, out: true }), 5)).toBeNull();
+  });
+});
+
+describe('countsWhileIdle', () => {
+  const focus: FocusState = { task: 'write', totalMs: 3_600_000, phase: 'focus', endsAt: 10_000 };
+  const YT = 'https://www.youtube.com/watch?v=abc';
+
+  it('keeps counting a YouTube video that is playing', () => {
+    expect(countsWhileIdle(YT, true, state())).toBe(true);
+  });
+
+  it('stops for a silent video and for other sites', () => {
+    expect(countsWhileIdle(YT, false, state())).toBe(false);
+    expect(countsWhileIdle('https://web.whatsapp.com/', true, state())).toBe(false);
+    expect(countsWhileIdle('https://www.reddit.com/', true, state())).toBe(false);
+  });
+
+  it('stops during a lock-in session and when YouTube is a budget site', () => {
+    expect(countsWhileIdle(YT, true, state({ focus }))).toBe(false);
+    const settings: Settings = { ...DEFAULT_SETTINGS, budget_sites: ['youtube.com'] };
+    expect(countsWhileIdle(YT, true, state({ settings }))).toBe(false);
   });
 });
 

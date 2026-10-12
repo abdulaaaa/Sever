@@ -5,6 +5,7 @@ import {
   matches,
   isBudgetSite,
   trackingFor,
+  countsWhileIdle,
   watchTerms,
   isWatchScope,
   isYouTube,
@@ -328,11 +329,12 @@ async function sweep(st: ExtensionState): Promise<void> {
 // The address in the focused tab right now, or null if time shouldn't count.
 async function activeUrl(st: ExtensionState): Promise<string | null> {
   const idle = await chrome.idle.queryState(60);
-  if (idle !== 'active') return null;
+  if (idle === 'locked') return null;
   const win = await chrome.windows.getLastFocused().catch(() => null);
   if (!win || !win.focused) return null;
   const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
   if (!tab?.url || decide(tab.url, st)) return null;
+  if (idle !== 'active' && !countsWhileIdle(tab.url, !!tab.audible, st)) return null;
   if (st.blocks.some((b) => b.kind === 'allow' && matches(tab.url!, b.target))) return null;
   return tab.url;
 }
