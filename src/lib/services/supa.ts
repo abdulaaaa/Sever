@@ -1,7 +1,7 @@
 // Supabase client using official SDK for type-safe database operations
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../utils/config';
-import type { Session, Block, AttemptRecord, AttemptsMap } from '../types';
+import type { Session, Block, AttemptRecord, AttemptsMap, SiteUsageRow, UsageDayRow } from '../types';
 
 // Initialize SDK client
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -152,6 +152,45 @@ export async function addUsage(day: string, seconds: number): Promise<number> {
 
     if (error) throw new Error(`Database error: ${error.message}`);
     return data;
+  });
+}
+
+export async function addSiteUsage(day: string, site: string, seconds: number): Promise<void> {
+  return withAuth(async () => {
+    const { error } = await supabase.rpc('add_site_usage', {
+      p_day: day,
+      p_site: site,
+      p_seconds: seconds
+    });
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+  });
+}
+
+export async function fetchSiteUsageSince(fromDay: string): Promise<SiteUsageRow[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase
+      .from('site_usage')
+      .select('day, site, seconds')
+      .gte('day', fromDay)
+      .order('day', { ascending: true })
+      .limit(5000);
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data || [];
+  });
+}
+
+export async function fetchUsageSince(fromDay: string): Promise<UsageDayRow[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase
+      .from('usage')
+      .select('day, seconds')
+      .gte('day', fromDay)
+      .order('day', { ascending: true });
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data || [];
   });
 }
 

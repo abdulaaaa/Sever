@@ -71,6 +71,24 @@ export interface PendingUsage {
   [day: string]: number; // day key -> seconds
 }
 
+// Pending per-site usage to sync with server
+export interface PendingSiteUsage {
+  [day: string]: { [site: string]: number }; // day key -> site -> seconds
+}
+
+// One row of per-site usage from the database
+export interface SiteUsageRow {
+  day: string;
+  site: string;
+  seconds: number;
+}
+
+// One row of total usage from the database
+export interface UsageDayRow {
+  day: string;
+  seconds: number;
+}
+
 // Decision result from decide() function
 export interface DecisionResult {
   id?: string;
@@ -80,6 +98,7 @@ export interface DecisionResult {
 // Tracking state stored in session storage
 export interface TrackingState {
   since: number; // timestamp
+  site?: string; // budget site being counted
 }
 
 // Message types for chrome.runtime.sendMessage

@@ -114,6 +114,35 @@ CREATE POLICY "Users can manage their own attempts"
   ON attempts FOR ALL USING (auth.uid() = user_id);
 ```
 
+**Per-site usage (for the Analytics page).** If your database was set up before the Analytics page existed, run just this block:
+
+```sql
+-- Per-site usage tracking
+CREATE TABLE site_usage (
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  day DATE NOT NULL,
+  site TEXT NOT NULL,
+  seconds INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day, site)
+);
+
+-- Function to add per-site usage
+CREATE OR REPLACE FUNCTION add_site_usage(p_day DATE, p_site TEXT, p_seconds INTEGER)
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO site_usage (user_id, day, site, seconds)
+  VALUES (auth.uid(), p_day, p_site, p_seconds)
+  ON CONFLICT (user_id, day, site)
+  DO UPDATE SET seconds = site_usage.seconds + p_seconds;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+ALTER TABLE site_usage ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage their own site usage"
+  ON site_usage FOR ALL USING (auth.uid() = user_id);
+```
+
 6. Create **ONE** user account in **Authentication → Users** with email and password
 
 ### Step 2: Install the Extension
@@ -230,6 +259,10 @@ fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
 ### Syncing Across Devices
 
 Set up the session (using the console script) on each Chrome profile/device. Settings sync automatically within about a minute.
+
+### Analytics
+
+Click **Analytics** in the popup to see how much time you spend on each daily-limit site per day, and the average per day for each week (Monday to Sunday). Per-site numbers start from the day you install this version; earlier days only show a combined total.
 
 ### Settings Lock
 

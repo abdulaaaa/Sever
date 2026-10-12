@@ -4,6 +4,7 @@ import {
   decide,
   matches,
   isBudgetSite,
+  budgetSiteFor,
   domainsFor,
   pageRegex,
   isSiteTarget,
@@ -18,6 +19,7 @@ import {
   insertBlocks,
   insertSettings,
   addUsage,
+  addSiteUsage,
   flushPendingAttempts
 } from '../lib/services/supa';
 import type {
@@ -26,6 +28,7 @@ import type {
   ExtensionState,
   DecisionResult,
   PendingUsage,
+  PendingSiteUsage,
   AttemptRecord,
   TrackingState,
   WarnedState
@@ -67,6 +70,24 @@ async function flushPending(): Promise<number | null> {
   return latest;
 }
 
+// Per-site time for the analytics page. Kept apart from flushPending so a
+// failure here never holds up the daily limit.
+async function flushSiteUsage(): Promise<void> {
+  const { pendingSiteUsage = {} } = await chrome.storage.local.get("pendingSiteUsage") as { pendingSiteUsage?: PendingSiteUsage };
+
+  for (const day of Object.keys(pendingSiteUsage)) {
+    for (const site of Object.keys(pendingSiteUsage[day])) {
+      const send = Math.floor(pendingSiteUsage[day][site]);
+      if (send < 1) continue;
+      await addSiteUsage(day, site, send);
+      pendingSiteUsage[day][site] -= send;
+      await chrome.storage.local.set({ pendingSiteUsage });
+    }
+    if (day !== dayKey()) delete pendingSiteUsage[day];
+  }
+  await chrome.storage.local.set({ pendingSiteUsage });
+}
+
 interface SettingsRow {
   daily_limit_minutes: number;
   budget_sites: string[];
@@ -91,6 +112,7 @@ async function sync(): Promise<void> {
     }
 
     await flushPending();
+    await flushSiteUsage().catch((e) => console.warn("Sever: site usage not synced:", e));
     const day = dayKey();
     let [blocks, settingsRows, usageRows] = await Promise.all([
       fetchBlocks(),
@@ -198,15 +220,16 @@ async function sweep(st: ExtensionState): Promise<void> {
 }
 
 // ---------- social media time ----------
-async function onBudgetSiteNow(st: ExtensionState): Promise<boolean> {
+// The budget site in the focused tab right now, or null if time shouldn't count.
+async function budgetSiteNow(st: ExtensionState): Promise<string | null> {
   const idle = await chrome.idle.queryState(60);
-  if (idle !== "active") return false;
+  if (idle !== "active") return null;
   const win = await chrome.windows.getLastFocused().catch(() => null);
-  if (!win || !win.focused) return false;
+  if (!win || !win.focused) return null;
   const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
-  if (!tab?.url || decide(tab.url, st)) return false;
-  if (st.blocks.some((b) => b.kind === "allow" && matches(tab.url!, b.target))) return false;
-  return isBudgetSite(tab.url, st.settings);
+  if (!tab?.url || decide(tab.url, st)) return null;
+  if (st.blocks.some((b) => b.kind === "allow" && matches(tab.url!, b.target))) return null;
+  return budgetSiteFor(tab.url, st.settings);
 }
 
 async function track(): Promise<ExtensionState> {
@@ -216,17 +239,24 @@ async function track(): Promise<ExtensionState> {
   if (tracking) {
     const secs = Math.min(now - tracking.since, TICK_CAP_MS) / 1000;
     if (secs > 0) {
-      const { pendingUsage = {} } = await chrome.storage.local.get("pendingUsage") as { pendingUsage?: PendingUsage };
+      const { pendingUsage = {}, pendingSiteUsage = {} } = await chrome.storage.local.get(["pendingUsage", "pendingSiteUsage"]) as {
+        pendingUsage?: PendingUsage;
+        pendingSiteUsage?: PendingSiteUsage;
+      };
       const day = dayKey();
       pendingUsage[day] = (pendingUsage[day] || 0) + secs;
-      await chrome.storage.local.set({ pendingUsage });
+      if (tracking.site) {
+        const sites = (pendingSiteUsage[day] ||= {});
+        sites[tracking.site] = (sites[tracking.site] || 0) + secs;
+      }
+      await chrome.storage.local.set({ pendingUsage, pendingSiteUsage });
     }
   }
 
   const st = await loadState();
-  const on = !st.out && (await onBudgetSiteNow(st));
+  const site = st.out ? null : await budgetSiteNow(st);
 
-  await chrome.storage.session.set({ tracking: on ? { since: now } : null });
+  await chrome.storage.session.set({ tracking: site ? { since: now, site } : null });
   return st;
 }
 

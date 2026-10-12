@@ -647,7 +647,7 @@
 
 <div class="wrap">
   <h1>Sever</h1>
-  <p class="lede">Changes sync to your database and apply across all Chrome profiles within about a minute.</p>
+  <p class="lede">Changes sync to your database and apply across all Chrome profiles within about a minute. <a href="../analytics/index.html">View usage analytics</a></p>
 
   {#if isLocked}
     <div class="lock-banner">

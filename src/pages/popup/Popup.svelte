@@ -79,6 +79,10 @@
     }
   }
 
+  function openAnalytics(): void {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/pages/analytics/index.html') });
+  }
+
   function openSettings(): void {
     chrome.runtime.openOptionsPage();
   }
@@ -196,7 +200,10 @@
 
 <header>
   <h1>Sever</h1>
-  <button class="primary" onclick={openSettings}>Settings</button>
+  <div>
+    <button onclick={openAnalytics}>Analytics</button>
+    <button class="primary" onclick={openSettings}>Settings</button>
+  </div>
 </header>
 
 {#if showNotice}

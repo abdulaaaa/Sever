@@ -195,8 +195,13 @@ export async function loadState(): Promise<ExtensionState> {
   };
 }
 
+// The budget site this address belongs to, e.g. "instagram.com", or null.
+export function budgetSiteFor(url: string, settings: Settings): string | null {
+  return settings.budget_sites.map(normHost).find((d) => matches(url, d)) ?? null;
+}
+
 export function isBudgetSite(url: string, settings: Settings): boolean {
-  return settings.budget_sites.some((d) => matches(url, normHost(d)));
+  return budgetSiteFor(url, settings) !== null;
 }
 
 // What should happen to this address right now?

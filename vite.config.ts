@@ -13,7 +13,8 @@ export default defineConfig({
       input: {
         popup: 'src/pages/popup/index.html',
         options: 'src/pages/options/index.html',
-        blocked: 'src/pages/blocked/index.html'
+        blocked: 'src/pages/blocked/index.html',
+        analytics: 'src/pages/analytics/index.html'
       }
     }
   },
