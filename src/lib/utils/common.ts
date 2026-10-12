@@ -1,6 +1,6 @@
 // Matching, schedules and other shared helpers.
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS, DEFAULT_FOCUS_CONFIG } from './defaults';
-import { DEV_MODE } from './config';
+import { DEV_MODE, EXTRA_SITES } from './config';
 import { watchTokens, watchSquash, watchMatch, type WatchTerm } from './watch';
 import type {
   Block,
@@ -239,6 +239,11 @@ export function budgetSiteFor(url: string, settings: Settings): string | null {
 
 export function isBudgetSite(url: string, settings: Settings): boolean {
   return budgetSiteFor(url, settings) !== null;
+}
+
+// The tracked-only site this address belongs to, e.g. "youtube.com", or null.
+export function extraSiteFor(url: string): string | null {
+  return EXTRA_SITES.find((d) => matches(url, d)) ?? null;
 }
 
 // ---------- people watch ----------

@@ -18,6 +18,7 @@ import {
   summarize,
   budgetSiteFor,
   isBudgetSite,
+  extraSiteFor,
   watchTerms,
   isWatchScope,
   watchUrl,
@@ -398,6 +399,20 @@ describe('budgetSiteFor and isBudgetSite', () => {
   it('normalises the configured sites', () => {
     const settings: Settings = { ...DEFAULT_SETTINGS, budget_sites: ['www.Twitter.com'] };
     expect(budgetSiteFor('https://x.com/home', settings)).toBe('x.com');
+  });
+});
+
+describe('extraSiteFor', () => {
+  it('finds YouTube and WhatsApp, including their subdomains', () => {
+    expect(extraSiteFor('https://www.youtube.com/watch?v=abc')).toBe('youtube.com');
+    expect(extraSiteFor('https://music.youtube.com/')).toBe('youtube.com');
+    expect(extraSiteFor('https://web.whatsapp.com/')).toBe('whatsapp.com');
+  });
+
+  it('returns null for other sites and invalid addresses', () => {
+    expect(extraSiteFor('https://example.com/youtube.com')).toBeNull();
+    expect(extraSiteFor('https://notyoutube.com/')).toBeNull();
+    expect(extraSiteFor('not a url')).toBeNull();
   });
 });
 

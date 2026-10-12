@@ -5,6 +5,9 @@ export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
 // Dev mode bypasses settings lock
 export const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true';
 
+// Sites whose time is recorded for the analytics page but never counted against the daily limit
+export const EXTRA_SITES = ['youtube.com', 'whatsapp.com'];
+
 // Validate configuration at runtime
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('Sever: Missing Supabase configuration. Check your .env file.');
