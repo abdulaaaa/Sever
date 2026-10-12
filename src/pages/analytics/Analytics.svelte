@@ -47,7 +47,7 @@
   let loading = $state(true);
   let error = $state('');
   let siteError = $state(false);
-  let data: UsageData = $state.raw({ days: [], series: [], firstData: -1 });
+  let data: UsageData = $state.raw({ days: [], series: [], extra: [], firstData: -1 });
   let range = $state(4); // weeks shown in the chart
   let hover: number | null = $state(null);
   let focusDays: Array<{ date: Date; d: FocusDay }> = $state([]); // lock-in history, newest first
