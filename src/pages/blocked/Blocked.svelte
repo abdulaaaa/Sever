@@ -77,6 +77,8 @@
   main {
     max-width: 540px;
     width: 100%;
+    margin: 0;
+    padding: 32px 28px;
     text-align: center;
   }
   .label {
@@ -98,25 +100,12 @@
     color: var(--muted);
     margin: 0 0 1.4rem;
   }
-  .counts {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
+  .tiles {
+    grid-template-columns: repeat(3, 1fr);
+    margin: 0;
   }
-  .counts div {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 12px 18px;
-    min-width: 80px;
-  }
-  .counts b {
-    display: block;
-    font-size: 1.6rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .counts small {
-    color: var(--muted);
+  .tile {
+    background: var(--bg);
   }
   .note {
     margin-top: 1.4rem;
@@ -128,7 +117,7 @@
   }
 </style>
 
-<main>
+<main class="card">
   <p class="label">{label}</p>
   <h1>
     {#if titleHighlight}
@@ -140,10 +129,10 @@
   <p class="sub">{sub}</p>
 
   {#if showCounts}
-    <div class="counts">
-      <div><b>{counts.today}</b><small>today</small></div>
-      <div><b>{counts.week}</b><small>this week</small></div>
-      <div><b>{counts.total}</b><small>in total</small></div>
+    <div class="tiles">
+      <div class="tile"><b>{counts.today}</b><span class="muted small">today</span></div>
+      <div class="tile"><b>{counts.week}</b><span class="muted small">this week</span></div>
+      <div class="tile"><b>{counts.total}</b><span class="muted small">in total</span></div>
     </div>
   {/if}
 

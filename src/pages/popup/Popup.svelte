@@ -139,62 +139,55 @@
     width: 360px;
     font-size: 13px;
     line-height: 1.4;
-    background: var(--card);
   }
   header {
     padding: 14px 16px 12px;
-    border-bottom: 1px solid var(--line);
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 8px;
   }
   h1 {
-    font-size: 15px;
+    font-size: 18px;
     margin: 0;
   }
-  section {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--line);
+  main {
+    padding: 0 16px 16px;
+    display: grid;
+    gap: 12px;
   }
-  section:last-of-type {
-    border-bottom: 0;
-  }
-  h2 {
-    font-size: 11px;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: 0 0 8px;
-    font-weight: 600;
-  }
-  .big {
-    font-size: 22px;
-    font-weight: 650;
-    font-variant-numeric: tabular-nums;
+  .tile, .card {
+    margin: 0;
   }
   .row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .card h2 {
+    font-size: 14px;
     margin-bottom: 6px;
   }
   ul {
+    list-style: none;
     margin: 0;
-    padding-left: 16px;
+    padding: 0;
   }
   li {
-    margin: 2px 0;
+    padding: 6px 0;
+    border-top: 1px solid var(--line);
     word-break: break-all;
+  }
+  li:first-child {
+    border-top: 0;
   }
   .notice {
     background: var(--accent-soft);
     color: var(--accent);
     padding: 8px 16px;
+    margin-bottom: 12px;
     font-size: 12px;
-  }
-  .muted {
-    color: var(--muted);
   }
 </style>
 
@@ -210,22 +203,24 @@
   <div class="notice">{notice}</div>
 {/if}
 
-<section>
-  <h2>Social media today</h2>
-  <div class="row">
-    <span class="big">{timeLeft}</span>
-    <span class="muted">{usedText}</span>
+<main>
+  <div class="tile">
+    <span class="muted small">Social media today</span>
+    <div class="row">
+      <b>{timeLeft}</b>
+      <span class="muted">{usedText}</span>
+    </div>
+    <div class={barClass}>
+      <i style="width: {fillPercent}%"></i>
+    </div>
   </div>
-  <div class={barClass}>
-    <i style="width: {fillPercent}%"></i>
-  </div>
-</section>
 
-<section>
-  <h2>Blocked right now</h2>
-  <ul>
-    {#each activeBlocks as item}
-      <li class={item.text.includes('Only your') ? 'muted' : ''}>{item.text}</li>
-    {/each}
-  </ul>
-</section>
+  <div class="card">
+    <h2>Blocked right now</h2>
+    <ul>
+      {#each activeBlocks as item}
+        <li class={item.text.includes('Only your') ? 'muted' : ''}>{item.text}</li>
+      {/each}
+    </ul>
+  </div>
+</main>

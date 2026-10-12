@@ -53,6 +53,16 @@
     total: number;
   }> = $state([]);
 
+  // Summary tiles
+  function activeCount(s: ExtensionState): number {
+    return s.blocks.filter((b) => b.kind !== 'allow' && (!b.schedule || schedActive(b.schedule))).length;
+  }
+
+  function fmtMin(secs: number): string {
+    const m = Math.max(0, Math.round(secs / 60));
+    return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  }
+
   const DAYS: [number, string][] = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
 
   function toast(text: string): void {
@@ -374,38 +384,6 @@
 </script>
 
 <style>
-  :global(body) {
-    font-size: 14px;
-    line-height: 1.45;
-  }
-  .wrap {
-    max-width: 780px;
-    margin: 0 auto;
-    padding: 28px 16px 64px;
-  }
-  h1 {
-    font-size: 22px;
-    margin: 0 0 4px;
-  }
-  .lede {
-    color: var(--muted);
-    margin: 0 0 22px;
-  }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 18px 20px;
-    margin-bottom: 16px;
-  }
-  .card h2 {
-    font-size: 16px;
-    margin: 0 0 2px;
-  }
-  .card > p.muted {
-    margin: 0 0 14px;
-    font-size: 13px;
-  }
   form.add {
     display: flex;
     flex-wrap: wrap;
@@ -413,7 +391,7 @@
     align-items: center;
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px dashed var(--line);
+    border-top: 1px solid var(--line);
   }
   form.add input[type='text'] {
     flex: 1 1 220px;
@@ -539,37 +517,21 @@
     border-radius: 8px;
     font-size: 13px;
   }
-  .muted {
-    color: var(--muted);
-  }
-  .tag {
-    display: inline-block;
-    font-size: 11px;
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: var(--soft);
-    color: var(--muted);
-  }
-  .tag.on {
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
   .lock-banner {
-    background: var(--danger-soft, #ffeaea);
-    color: var(--danger, #c44);
-    border: 1px solid var(--danger, #c44);
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
+    border-color: var(--danger);
     display: flex;
     align-items: center;
     gap: 10px;
   }
   .lock-banner svg {
     flex-shrink: 0;
+    color: var(--danger);
   }
-  .lock-card {
-    border-color: var(--accent);
+  .report {
+    margin-top: 12px;
+  }
+  .report tr.person td {
+    font-weight: 600;
   }
   .lock-toggle {
     display: flex;
@@ -590,47 +552,7 @@
   .report-btn {
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px dashed var(--line);
-  }
-  .report-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-variant-numeric: tabular-nums;
-    margin-top: 12px;
-  }
-  .report-table th {
-    font-weight: 500;
-    color: var(--muted);
-    text-align: right;
-    font-size: 12px;
-    padding: 0 0 6px 10px;
-  }
-  .report-table th:first-child {
-    text-align: left;
-    padding-left: 0;
-  }
-  .report-table td {
-    padding: 6px 0 6px 10px;
-    text-align: right;
     border-top: 1px solid var(--line);
-  }
-  .report-table td:first-child {
-    text-align: left;
-    padding-left: 0;
-    word-break: break-all;
-  }
-  .report-table tr.person td {
-    font-weight: 600;
-    background: var(--soft);
-    border-top: 0;
-  }
-  .report-table tr.person td:first-child {
-    padding-left: 8px;
-    border-radius: 6px 0 0 6px;
-  }
-  .report-table tr.person td:last-child {
-    padding-right: 8px;
-    border-radius: 0 6px 6px 0;
   }
   .allday {
     display: inline-flex;
@@ -650,7 +572,7 @@
   <p class="lede">Changes sync to your database and apply across all Chrome profiles within about a minute. <a href="../analytics/index.html">View usage analytics</a></p>
 
   {#if isLocked}
-    <div class="lock-banner">
+    <div class="card notice lock-banner">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -662,9 +584,30 @@
     </div>
   {/if}
 
+  {#if st}
+    <div class="tiles">
+      <div class="tile">
+        <span class="muted small">Time left today</span>
+        <b>{fmtMin(st.limit - st.used)}</b>
+      </div>
+      <div class="tile">
+        <span class="muted small">Daily limit</span>
+        <b>{fmtMin(st.limit)}</b>
+      </div>
+      <div class="tile">
+        <span class="muted small">Blocks active now</span>
+        <b>{activeCount(st)}</b>
+      </div>
+      <div class="tile">
+        <span class="muted small">Settings lock</span>
+        <b>{!lockEnabled ? 'Off' : isLocked ? 'Locked' : 'Unlocked'}</b>
+      </div>
+    </div>
+  {/if}
+
   <!-- Settings Lock Card - locked when outside unlock window -->
   <fieldset disabled={isLocked}>
-    <div class="card lock-card">
+    <div class="card">
       <h2>Settings lock</h2>
       <p class="muted">Lock settings outside of a scheduled time window. Settings can only be changed during unlock hours.</p>
       <div class="lock-toggle">
@@ -754,12 +697,13 @@
           </button>
         </div>
         {#if showReport}
-          <table class="report-table">
+          <div class="scroll report">
+          <table class="table">
             <thead>
               <tr>
                 <th>Page</th>
-                <th>Today</th>
-                <th>Total</th>
+                <th class="num">Today</th>
+                <th class="num">Total</th>
               </tr>
             </thead>
             <tbody>
@@ -767,19 +711,20 @@
                 {#if row.isPerson}
                   <tr class="person">
                     <td>{row.name}</td>
-                    <td>{row.today}</td>
-                    <td>{row.total}</td>
+                    <td class="num">{row.today}</td>
+                    <td class="num">{row.total}</td>
                   </tr>
                 {:else}
                   <tr>
                     <td>{row.target}</td>
-                    <td>{row.today || ''}</td>
-                    <td>{row.total || ''}</td>
+                    <td class="num">{row.today || ''}</td>
+                    <td class="num">{row.total || ''}</td>
                   </tr>
                 {/if}
               {/each}
             </tbody>
           </table>
+          </div>
         {/if}
       {/if}
     </div>

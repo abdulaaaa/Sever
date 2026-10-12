@@ -160,9 +160,6 @@
 
 <style>
   .wrap {
-    max-width: 920px;
-    margin: 0 auto;
-    padding: 28px 16px 64px;
     --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
     --s5: #e87ba4; --s6: #008300; --s7: #6250d6;
     --s-other: #8a8a85; --s-unsplit: #c9c9c3;
@@ -173,53 +170,6 @@
       --s5: #d55181; --s6: #008300; --s7: #9085e9;
       --s-other: #7d7d78; --s-unsplit: #4a4a47;
     }
-  }
-  h1 {
-    font-size: 22px;
-    margin: 0 0 4px;
-  }
-  h2 {
-    font-size: 16px;
-    margin: 0 0 4px;
-  }
-  .lede {
-    color: var(--muted);
-    margin: 0 0 22px;
-  }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 16px 18px;
-    margin-bottom: 16px;
-  }
-  .card > p {
-    margin: 0 0 14px;
-    font-size: 13px;
-  }
-  .notice {
-    border-color: var(--warn);
-    font-size: 13px;
-  }
-  .tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-  .tile {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 12px 16px;
-  }
-  .tile b {
-    display: block;
-    font-size: 24px;
-    font-weight: 600;
-  }
-  .small {
-    font-size: 12px;
   }
   .head {
     display: flex;
@@ -350,31 +300,6 @@
     font-weight: 600;
     margin-bottom: 4px;
   }
-  .scroll {
-    overflow-x: auto;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  th, td {
-    text-align: left;
-    padding: 7px 10px 7px 0;
-    border-bottom: 1px solid var(--line);
-    white-space: nowrap;
-  }
-  th {
-    font-weight: 500;
-    color: var(--muted);
-  }
-  .num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-  td.total {
-    font-weight: 600;
-  }
   summary {
     cursor: pointer;
     font-weight: 600;
@@ -386,7 +311,7 @@
 
 {#snippet table(first: string, rows: Row[])}
   <div class="scroll">
-    <table>
+    <table class="table">
       <thead>
         <tr>
           <th>{first}</th>
