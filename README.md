@@ -325,6 +325,7 @@ Click **Analytics** in the popup to see how much time you spend on each daily-li
 - YouTube during a lock-in session isn't counted here. It stays in the lock-in table as "On YouTube".
 - The tiles show two figures side by side: **Limit sites**, and **With YouTube + WhatsApp**. The switch above the chart adds both sites to the chart and the tables.
 - No database change is needed: the time is stored in the existing `site_usage` table under its own site name (`extra:youtube.com`, `extra:whatsapp.com`). Numbers start from the day you install this version.
+- Rebuild and reload the extension on every device you use. A device still on an older version doesn't know these names and shows that time on its Analytics page as if it were limit-site time. The daily limit itself is not affected.
 - If you add YouTube or WhatsApp to your daily-limit sites, that site counts against the limit from then on like any other. Time recorded before the change stays where it was, so nothing is counted twice.
 
 ### Blocking searches for people
