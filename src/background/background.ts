@@ -7,6 +7,13 @@ import {
   budgetSiteFor,
   watchTerms,
   isWatchScope,
+  isYouTube,
+  videoId,
+  focusLeft,
+  focusSites,
+  FOCUS_YT_BLOCKED,
+  FOCUS_KEYS,
+  emptyFocusDay,
   domainsFor,
   pageRegex,
   isSiteTarget,
@@ -21,6 +28,7 @@ import {
   insertSettings,
   addUsage,
   addSiteUsage,
+  addFocus,
   flushPendingAttempts
 } from '../lib/services/supa';
 import type {
@@ -32,6 +40,10 @@ import type {
   PendingSiteUsage,
   AttemptRecord,
   TrackingState,
+  FocusState,
+  FocusUnrated,
+  FocusDay,
+  FocusLog,
   WarnedState
 } from '../lib/types';
 
@@ -89,6 +101,38 @@ async function flushSiteUsage(): Promise<void> {
   await chrome.storage.local.set({ pendingSiteUsage });
 }
 
+// Lock-in history. Like flushSiteUsage, a failure here never holds up the daily limit.
+async function flushFocus(): Promise<void> {
+  const { pendingFocus = {}, focusLog } = await chrome.storage.local.get(["pendingFocus", "focusLog"]) as {
+    pendingFocus?: FocusLog;
+    focusLog?: FocusLog;
+  };
+
+  // History recorded before it was synced.
+  if (focusLog) {
+    for (const [day, d] of Object.entries(focusLog)) {
+      const p = (pendingFocus[day] ||= emptyFocusDay());
+      for (const k of FOCUS_KEYS) p[k] += d[k] || 0;
+    }
+    await chrome.storage.local.set({ pendingFocus });
+    await chrome.storage.local.remove("focusLog");
+  }
+
+  for (const day of Object.keys(pendingFocus)) {
+    const d = pendingFocus[day];
+    const send = { ...d, seconds: Math.floor(d.seconds), video: Math.floor(d.video) };
+    if (FOCUS_KEYS.some((k) => send[k] > 0)) {
+      // Sent at least once: if the write below fails after a successful send,
+      // the day is sent again and counted twice. Same trade-off as flushPending.
+      await addFocus(day, send);
+      pendingFocus[day] = { ...emptyFocusDay(), seconds: d.seconds - send.seconds, video: d.video - send.video };
+      await chrome.storage.local.set({ pendingFocus });
+    }
+    if (day !== dayKey()) delete pendingFocus[day];
+  }
+  await chrome.storage.local.set({ pendingFocus });
+}
+
 async function sync(): Promise<void> {
   try {
     // Move counts from the previous version into the database.
@@ -104,6 +148,7 @@ async function sync(): Promise<void> {
 
     await flushPending();
     await flushSiteUsage().catch((e) => console.warn("Sever: site usage not synced:", e));
+    await flushFocus().catch((e) => console.warn("Sever: lock-in history not synced:", e));
     const day = dayKey();
     let [blocks, settingsRows, usageRows] = await Promise.all([
       fetchBlocks(),
@@ -128,7 +173,8 @@ async function sync(): Promise<void> {
           daily_limit_minutes: s.daily_limit_minutes,
           budget_sites: s.budget_sites,
           settings_unlock_schedule: s.settings_unlock_schedule || null,
-          person_terms: s.person_terms || {}
+          person_terms: s.person_terms || {},
+          focus_config: s.focus_config || {}
         },
         usage: { day, seconds: usageRows[0]?.seconds || 0 }
       },
@@ -186,6 +232,36 @@ async function applyRules(st: ExtensionState): Promise<void> {
     }
   }
 
+  if (st.focus) {
+    const domains = [...new Set(focusSites(st).flatMap((d) => domainsFor(d)))];
+    if (domains.length) {
+      rules.push({
+        id: id++,
+        priority: 15,
+        action: redirect("focus=1"),
+        condition: { requestDomains: domains, resourceTypes: ["main_frame" as ResourceType] }
+      });
+    }
+    rules.push({
+      id: id++,
+      priority: 15,
+      action: redirect("focus=1"),
+      condition: {
+        regexFilter: `^https?://([a-z0-9-]+\\.)*youtube\\.com/${FOCUS_YT_BLOCKED}([/?#]|$)`,
+        resourceTypes: ["main_frame" as ResourceType]
+      }
+    });
+    // While the timer runs, the rest of YouTube stays open even with the daily limit used up.
+    if (st.focus.phase === "focus") {
+      rules.push({
+        id: id++,
+        priority: 12,
+        action: { type: chrome.declarativeNetRequest.RuleActionType.ALLOW },
+        condition: { requestDomains: ["youtube.com"], resourceTypes: ["main_frame" as ResourceType] }
+      });
+    }
+  }
+
   const key = JSON.stringify(rules);
   const { rulesKey } = await chrome.storage.session.get("rulesKey") as { rulesKey?: string };
   if (key === rulesKey) return;
@@ -199,21 +275,23 @@ async function applyRules(st: ExtensionState): Promise<void> {
 }
 
 const blockedUrl = (d: DecisionResult, extra: string = ""): string =>
-  chrome.runtime.getURL("src/pages/blocked/index.html?" + (d.budget ? "budget=1" : `id=${d.id}`) + (d.watch ? "&w=1" : "") + extra);
+  chrome.runtime.getURL("src/pages/blocked/index.html?" + (d.focus ? "focus=1" : d.budget ? "budget=1" : `id=${d.id}`) + (d.watch ? "&w=1" : "") + extra);
 
 // Send tabs that are already open to the blocked screen if they're now blocked.
 async function sweep(st: ExtensionState): Promise<void> {
   const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+  const audio = await audioTabId();
   for (const tab of tabs) {
-    if (!tab.url || !tab.id) continue;
+    // The session's audio tab keeps playing through a pause, whatever the daily limit says.
+    if (!tab.url || !tab.id || tab.id === audio || (st.focus && tab.url.endsWith(AUDIO_MARK))) continue;
     const d = decide(tab.url, st);
     if (d) chrome.tabs.update(tab.id, { url: blockedUrl(d, "&n=1") }).catch(() => {});
   }
 }
 
 // ---------- social media time ----------
-// The budget site in the focused tab right now, or null if time shouldn't count.
-async function budgetSiteNow(st: ExtensionState): Promise<string | null> {
+// The address in the focused tab right now, or null if time shouldn't count.
+async function activeUrl(st: ExtensionState): Promise<string | null> {
   const idle = await chrome.idle.queryState(60);
   if (idle !== "active") return null;
   const win = await chrome.windows.getLastFocused().catch(() => null);
@@ -221,7 +299,7 @@ async function budgetSiteNow(st: ExtensionState): Promise<string | null> {
   const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
   if (!tab?.url || decide(tab.url, st)) return null;
   if (st.blocks.some((b) => b.kind === "allow" && matches(tab.url!, b.target))) return null;
-  return budgetSiteFor(tab.url, st.settings);
+  return tab.url;
 }
 
 async function track(): Promise<ExtensionState> {
@@ -230,7 +308,9 @@ async function track(): Promise<ExtensionState> {
 
   if (tracking) {
     const secs = Math.min(now - tracking.since, TICK_CAP_MS) / 1000;
-    if (secs > 0) {
+    if (secs > 0 && tracking.focusVideo) {
+      await logFocus((d) => { d.video += secs; });
+    } else if (secs > 0) {
       const { pendingUsage = {}, pendingSiteUsage = {} } = await chrome.storage.local.get(["pendingUsage", "pendingSiteUsage"]) as {
         pendingUsage?: PendingUsage;
         pendingSiteUsage?: PendingSiteUsage;
@@ -246,11 +326,194 @@ async function track(): Promise<ExtensionState> {
   }
 
   const st = await loadState();
-  const site = st.out ? null : await budgetSiteNow(st);
+  const url = await activeUrl(st);
+  let next: TrackingState | null = null;
+  if (url && st.focus?.phase === "focus" && isYouTube(url)) {
+    // YouTube while the timer runs is logged with the session, not counted against the daily limit.
+    next = { since: now, focusVideo: true };
+  } else if (url && !st.out) {
+    const site = budgetSiteFor(url, st.settings);
+    if (site) next = { since: now, site };
+  }
 
-  await chrome.storage.session.set({ tracking: site ? { since: now, site } : null });
+  await chrome.storage.session.set({ tracking: next });
   return st;
 }
+
+// Is time being counted against the daily limit right now?
+const countingNow = (t?: TrackingState | null): boolean => !!t && !t.focusVideo;
+
+// ---------- lock-in mode ----------
+const ICON = chrome.runtime.getURL("src/assets/icons/128.png");
+const PAUSE_NAG_MS = 10 * 60_000;
+const BEAT_MS = 60_000;        // the heartbeat is written by the one-minute tick
+const OVERDUE_MS = 2 * 60_000; // a timer that ran out this long ago ended with the browser closed or asleep
+const AUDIO_MARK = "#sever-audio"; // on the audio tab's address; the content script looks for it too
+
+const notify = (id: string, title: string, message: string): void => {
+  chrome.notifications.create(id, { type: "basic", iconUrl: ICON, title, message });
+};
+
+async function getFocus(): Promise<FocusState | null> {
+  const { focus } = await chrome.storage.local.get("focus") as { focus?: FocusState | null };
+  return focus || null;
+}
+
+// The tab playing the session's audio. Kept in session storage so it is
+// forgotten when the browser restarts: tab ids are only unique within one run.
+async function audioTabId(): Promise<number | null> {
+  const { focusAudioTab } = await chrome.storage.session.get("focusAudioTab") as { focusAudioTab?: number };
+  return focusAudioTab ?? null;
+}
+
+async function closeAudioTab(): Promise<void> {
+  const id = await audioTabId();
+  await chrome.storage.session.remove("focusAudioTab");
+  const known = id === null ? null : await chrome.tabs.get(id).catch(() => null);
+  // After a browser restart the id is gone but the tab may have been restored: find it by its marker.
+  const marked = await chrome.tabs.query({ url: "*://*.youtube.com/*" }).catch(() => []);
+  for (const tab of [known, ...marked.filter((t) => t.url?.endsWith(AUDIO_MARK))]) {
+    // Only if it's still on YouTube: the tab may have been put to another use.
+    if (tab?.id !== undefined && tab.url && isYouTube(tab.url)) chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+// Queue a change to a day's lock-in history (today by default); it is sent to
+// the database on the next sync. `also` is saved in the same write, so a
+// session's state and its history entry can never get out of step.
+async function logFocus(change: (d: FocusDay) => void, day: string = dayKey(), also: Record<string, unknown> = {}): Promise<void> {
+  const { pendingFocus = {} } = await chrome.storage.local.get("pendingFocus") as { pendingFocus?: FocusLog };
+  change((pendingFocus[day] ||= emptyFocusDay()));
+  await chrome.storage.local.set({ pendingFocus, ...also });
+}
+
+async function focusStart(task: string, minutes: number): Promise<void> {
+  if (await getFocus()) return;
+  const st = await loadState();
+  const totalMs = Math.min(480, Math.max(1, Math.round(minutes) || st.focusConfig.minutes)) * 60_000;
+  const now = Date.now();
+
+  await chrome.storage.local.set({
+    // The blocked sites are fixed here, so removing one from settings mid-session doesn't open it.
+    focus: { task: task.slice(0, 80), totalMs, phase: "focus", endsAt: now + totalMs, sites: focusSites(st) },
+    focusBeat: now,
+    focusUnrated: null
+  });
+  await chrome.alarms.create("focus", { when: now + totalMs });
+  await refresh({ doSync: false });
+
+  // The session's audio: the saved video from the start, in a pinned background
+  // tab. Opened after the rules are in place, so it isn't caught by a block the session lifts.
+  const id = videoId(st.focusConfig.video);
+  if (!id) return;
+  const tab = await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${encodeURIComponent(id)}${AUDIO_MARK}`, active: false, pinned: true }).catch(() => null);
+  if (tab?.id !== undefined) await chrome.storage.session.set({ focusAudioTab: tab.id });
+}
+
+async function focusPause(): Promise<void> {
+  const f = await getFocus();
+  if (f?.phase !== "focus") return;
+  await chrome.storage.local.set({ focus: { ...f, phase: "paused", remainingMs: focusLeft(f), pausedAt: Date.now() } });
+  await chrome.alarms.clear("focus");
+  await chrome.alarms.create("focusNag", { when: Date.now() + PAUSE_NAG_MS });
+  await refresh({ doSync: false, doSweep: false });
+}
+
+async function focusResume(): Promise<void> {
+  const f = await getFocus();
+  if (f?.phase !== "paused") return;
+  const now = Date.now();
+  const endsAt = now + focusLeft(f);
+  await chrome.storage.local.set({
+    focus: { ...f, phase: "focus", endsAt, remainingMs: undefined, pausedAt: undefined },
+    focusBeat: now
+  });
+  await chrome.alarms.clear("focusNag");
+  await chrome.alarms.create("focus", { when: endsAt });
+  await refresh({ doSync: false, doSweep: false });
+}
+
+// End the focus part of a session: early (no break) or because the timer ran out.
+async function focusFinish(early: boolean): Promise<void> {
+  const f = await getFocus();
+  if (!f || f.phase === "break") return;
+  const now = Date.now();
+  let left = focusLeft(f, now);
+  let day = dayKey();
+  let stopped = Math.min(now, f.endsAt); // when the timer stopped running
+
+  // The timer ran out a while ago, with the browser closed or asleep. Count
+  // only the time up to the last heartbeat, under the day it stopped, and skip the break.
+  const overdue = f.phase === "focus" && now - f.endsAt > OVERDUE_MS;
+  if (overdue) {
+    const { focusBeat } = await chrome.storage.local.get("focusBeat") as { focusBeat?: number };
+    const seen = Math.min(f.endsAt, (focusBeat ?? f.endsAt) + BEAT_MS);
+    left = f.endsAt - seen;
+    day = dayKey(new Date(seen));
+    stopped = seen;
+  }
+  // Ending in the moment after the timer ran out isn't ending early.
+  if (left === 0) early = false;
+
+  const { focusConfig } = await loadState();
+  const breakMs = (Number(focusConfig.breakMinutes) || 0) * 60_000;
+  const next: FocusState | null = early || overdue || breakMs <= 0
+    ? null
+    : { task: f.task, totalMs: f.totalMs, phase: "break", endsAt: now + breakMs, sites: f.sites };
+
+  // Close off YouTube time here, at the moment the timer stopped, so the
+  // track() that follows can't count the stretch after it.
+  const { tracking } = await chrome.storage.session.get("tracking") as { tracking?: TrackingState };
+  let video = 0;
+  if (tracking?.focusVideo) {
+    video = Math.min(Math.max(0, stopped - tracking.since), TICK_CAP_MS) / 1000;
+    await chrome.storage.session.set({ tracking: null });
+  }
+
+  await logFocus((d) => {
+    d.seconds += (f.totalMs - left) / 1000;
+    d.video += video;
+    d.sessions += 1;
+    if (early) d.early += 1;
+  }, day, { focus: next, ...(early ? {} : { focusUnrated: { task: f.task, day } }) });
+
+  await closeAudioTab();
+  await chrome.alarms.clear("focus");
+  await chrome.alarms.clear("focusNag");
+  if (next) {
+    await chrome.alarms.create("focus", { when: next.endsAt });
+    notify("focus-done", "Session done", `"${f.task}": take a ${focusConfig.breakMinutes}-minute break.`);
+  } else if (!early && !overdue) {
+    notify("focus-done", "Session done", `"${f.task}": time's up.`);
+  }
+  await refresh({ doSync: false });
+}
+
+async function focusBreakEnd(announce: boolean): Promise<void> {
+  const f = await getFocus();
+  if (f?.phase !== "break") return;
+  await chrome.storage.local.set({ focus: null });
+  await chrome.alarms.clear("focus");
+  if (announce) notify("focus-break", "Break over", "Ready for the next one?");
+  await refresh({ doSync: false });
+}
+
+// Keep the heartbeat going, and move the session on if its timer has run out.
+// Also catches up after the browser was closed.
+async function focusTick(): Promise<void> {
+  const f = await getFocus();
+  if (!f || f.phase === "paused") return;
+  const now = Date.now();
+  if (now < f.endsAt) {
+    if (f.phase === "focus") await chrome.storage.local.set({ focusBeat: now });
+    return;
+  }
+  if (f.phase === "focus") await focusFinish(false);
+  else await focusBreakEnd(now - f.endsAt < OVERDUE_MS);
+}
+
+const focusTickSafe = (): Promise<void> =>
+  focusTick().catch((e) => console.warn("Sever: lock-in check failed:", e));
 
 // Format badge text - show MM:SS when under 10 min, otherwise just minutes
 function formatBadge(seconds: number): string {
@@ -293,6 +556,16 @@ function stopBadgeTicker(): void {
 }
 
 async function updateBadge(st: ExtensionState, isTracking: boolean = false): Promise<void> {
+  // While locked in, the badge shows the session: minutes left, or || when paused.
+  if (st.focus && st.focus.phase !== "break") {
+    stopBadgeTicker();
+    const paused = st.focus.phase === "paused";
+    await chrome.action.setBadgeText({ text: paused ? "||" : String(Math.ceil(focusLeft(st.focus) / 60_000)) });
+    await chrome.action.setBadgeBackgroundColor({ color: paused ? "#5f6368" : "#b4441f" });
+    await chrome.action.setTitle({ title: `Sever: locked in on "${st.focus.task}"` });
+    return;
+  }
+
   const remaining = Math.max(0, st.limit - st.used);
   const left = Math.ceil(remaining / 60);
 
@@ -320,7 +593,7 @@ async function updateBadge(st: ExtensionState, isTracking: boolean = false): Pro
       warned.list.push(m);
       chrome.notifications.create(`warn-${day}-${m}`, {
         type: "basic",
-        iconUrl: "icons/128.png",
+        iconUrl: ICON,
         title: "Social media time",
         message: `${left} minute${left === 1 ? "" : "s"} left today.`
       });
@@ -342,7 +615,7 @@ async function refresh({ doSync = true, doSweep = true }: RefreshOptions = {}): 
   await applyRules(st);
   if (doSweep) await sweep(st);
   const { tracking } = await chrome.storage.session.get("tracking") as { tracking?: TrackingState };
-  await updateBadge(st, !!tracking);
+  await updateBadge(st, countingNow(tracking));
 }
 
 // ---------- events ----------
@@ -357,6 +630,7 @@ chrome.idle.setDetectionInterval(60);
 chrome.runtime.onInstalled.addListener(() => {
   serial(async () => {
     await ensureAlarm();
+    await focusTickSafe();
     await refresh();
   });
 });
@@ -364,17 +638,31 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   serial(async () => {
     await ensureAlarm();
+    await focusTickSafe();
     await refresh();
   });
 });
 
 chrome.alarms.onAlarm.addListener((a) => {
-  if (a.name === "tick") serial(() => refresh());
+  if (a.name === "tick") {
+    serial(async () => {
+      await focusTickSafe();
+      await refresh();
+    });
+  }
+  if (a.name === "focus") serial(focusTickSafe);
+  if (a.name === "focusNag") {
+    serial(async () => {
+      const f = await getFocus();
+      if (f?.phase === "paused") notify("focus-nag", "Still paused", `"${f.task}" has been paused for 10 minutes. Resume or end it from the Sever popup.`);
+    });
+  }
 });
 
 // Initial run
 serial(async () => {
   await ensureAlarm();
+  await focusTickSafe();
   await refresh({ doSync: false, doSweep: false });
 });
 
@@ -413,6 +701,9 @@ chrome.webNavigation.onCommitted.addListener(check, WEB);
 interface Message {
   type: string;
   id?: string;
+  task?: string;
+  minutes?: number;
+  outcome?: "done" | "partly" | "pulled";
 }
 
 chrome.runtime.onMessage.addListener((
@@ -432,7 +723,7 @@ chrome.runtime.onMessage.addListener((
 
       // Calculate live usage including time since last track() call
       let liveUsed = st.used;
-      if (tracking) {
+      if (tracking && countingNow(tracking)) {
         const elapsed = (Date.now() - tracking.since) / 1000;
         liveUsed += Math.min(elapsed, TICK_CAP_MS / 1000);
       }
@@ -443,7 +734,7 @@ chrome.runtime.onMessage.addListener((
         limit: st.limit,
         used: liveUsed,
         out: liveUsed >= st.limit,
-        tracking: !!tracking
+        tracking: countingNow(tracking)
       });
     });
     return true; // Keep channel open for async response
@@ -459,8 +750,39 @@ chrome.runtime.onMessage.addListener((
     // Check if we're currently tracking time (on a budget site)
     serial(async () => {
       const { tracking } = await chrome.storage.session.get("tracking") as { tracking?: TrackingState };
-      reply({ tracking: !!tracking });
+      reply({ tracking: countingNow(tracking) });
     });
+    return true;
+  }
+
+  // Lock-in mode. Changes are only accepted from the extension's own pages, never a content script.
+  const ownPage = !!sender.url?.startsWith(chrome.runtime.getURL(""));
+  if (msg?.type === "focusStart" && ownPage) {
+    serial(() => focusStart(String(msg.task || "").trim() || "Focus", Number(msg.minutes))).then(() => reply({ ok: true }));
+    return true;
+  }
+  if ((msg?.type === "focusPause" || msg?.type === "focusResume" || msg?.type === "focusEnd" || msg?.type === "focusSkipBreak") && ownPage) {
+    const act = {
+      focusPause,
+      focusResume,
+      focusEnd: () => focusFinish(true),
+      focusSkipBreak: () => focusBreakEnd(false)
+    }[msg.type];
+    serial(act).then(() => reply({ ok: true }));
+    return true;
+  }
+  if (msg?.type === "focusOutcome" && ownPage) {
+    serial(async () => {
+      const { focusUnrated } = await chrome.storage.local.get("focusUnrated") as { focusUnrated?: FocusUnrated | null };
+      const outcome = msg.outcome;
+      if (!focusUnrated || !outcome || !["done", "partly", "pulled"].includes(outcome)) return;
+      await logFocus((d) => { d[outcome] += 1; }, focusUnrated.day, { focusUnrated: null });
+    }).then(() => reply({ ok: true }));
+    return true;
+  }
+  // From the lock-in content script: is this the tab playing the session's audio?
+  if (msg?.type === "focusTab") {
+    audioTabId().then((id) => reply({ audio: id !== null && id === sender.tab?.id }));
     return true;
   }
 
@@ -488,8 +810,8 @@ chrome.runtime.onMessage.addListener((
     serial(async () => {
       const st = await loadState();
 
-      // Don't show if out of time
-      if (st.out) {
+      // Don't show if out of time, or while a lock-in session has its own pill
+      if (st.out || st.focus) {
         reply({ show: false });
         return;
       }

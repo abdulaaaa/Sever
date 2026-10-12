@@ -24,6 +24,7 @@ export interface Settings {
   budget_sites: string[];
   settings_unlock_schedule?: Schedule | null;  // When settings CAN be changed (null = always unlocked)
   person_terms?: Record<string, string[]>;     // Extra names/usernames to watch for, by person
+  focus_config?: Partial<FocusConfig>;         // Lock-in mode settings
 }
 
 // Supabase session
@@ -59,6 +60,53 @@ export interface ExtensionState {
   lastError: string | null;
   syncedAt: number | null;
   usingDefaults: boolean;
+  focus: FocusState | null;
+  focusConfig: FocusConfig;
+}
+
+// A lock-in session. The running session lives in chrome.storage.local on this
+// device; its settings and history are synced.
+export interface FocusState {
+  task: string;
+  totalMs: number;       // planned length
+  phase: 'focus' | 'paused' | 'break';
+  endsAt: number;        // when the focus or break ends (ms); not used while paused
+  remainingMs?: number;  // time left, while paused
+  pausedAt?: number;
+  sites?: string[];      // what was blocked when the session started; later removals don't unblock
+}
+
+// A finished session still waiting for its "how did it go?" answer
+export interface FocusUnrated {
+  task: string;
+  day: string;
+}
+
+export interface FocusConfig {
+  minutes: number;       // default session length
+  breakMinutes: number;
+  video: string;         // YouTube link played during a session, or ""
+  sites: string[];       // blocked during a session, on top of the daily-limit sites
+}
+
+// One day of lock-in history
+export interface FocusDay {
+  seconds: number;       // time locked in
+  sessions: number;
+  video: number;         // seconds on YouTube while locked in
+  done: number;
+  partly: number;
+  pulled: number;
+  early: number;         // sessions ended before the timer
+}
+
+export interface FocusLog {
+  [day: string]: FocusDay;
+}
+
+// One row of lock-in history from the database
+export interface FocusDayRow extends FocusDay {
+  day: string;
 }
 
 // Attempt record for tracking blocked page visits
@@ -95,12 +143,14 @@ export interface DecisionResult {
   id?: string;
   budget?: boolean;
   watch?: boolean; // a search or lookalike profile for a blocked person
+  focus?: boolean; // blocked for the length of a lock-in session
 }
 
 // Tracking state stored in session storage
 export interface TrackingState {
   since: number; // timestamp
   site?: string; // budget site being counted
+  focusVideo?: boolean; // YouTube during a lock-in session: logged, not counted against the limit
 }
 
 // Replies to chrome.runtime.sendMessage

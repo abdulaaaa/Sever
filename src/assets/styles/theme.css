@@ -16,6 +16,8 @@ a { color: var(--accent); }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 6px 12px; }
 button:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button:disabled:hover { border-color: var(--line); color: inherit; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (prefers-color-scheme: dark) { button.primary { color: #1a0d07; } }
 button.link { border: 0; background: none; padding: 2px 4px; color: var(--muted); }

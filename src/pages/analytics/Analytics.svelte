@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { dayKey } from '../../lib/utils/common';
-  import { fetchSiteUsageSince, fetchUsageSince } from '../../lib/services/supa';
+  import { dayKey, FOCUS_KEYS, emptyFocusDay, focusLeft } from '../../lib/utils/common';
+  import { fetchSiteUsageSince, fetchUsageSince, fetchFocusSince } from '../../lib/services/supa';
   import { addDays, buildUsage, weekAverage, OTHER, UNSPLIT, type UsageData, type UsageDay } from '../../lib/utils/analytics';
-  import type { PendingUsage, PendingSiteUsage, SiteUsageRow, UsageDayRow } from '../../lib/types';
+  import type { PendingUsage, PendingSiteUsage, SiteUsageRow, UsageDayRow, FocusLog, FocusDay, FocusDayRow, FocusState } from '../../lib/types';
 
   const WEEKS = 12;             // how far back to load
   const SLOTS = 7;              // sites that get their own colour; the rest fold into "Other sites"
@@ -24,6 +24,9 @@
   let data: UsageData = $state.raw({ days: [], series: [], firstData: -1 });
   let range = $state(4);      // weeks shown in the chart
   let hover: number | null = $state(null);
+  let focusDays: Array<{ date: Date; d: FocusDay }> = $state([]); // lock-in history, newest first
+  let focusRunning = $state(false);
+  let focusError = $state(false); // lock-in history couldn't be read from the database
 
   function fmt(secs: number): string {
     const m = Math.round(secs / 60);
@@ -36,18 +39,48 @@
 
   async function load(): Promise<void> {
     const from = dayKey(start);
-    const [siteRows, totalRows, local] = await Promise.all([
+    const [siteRows, totalRows, focusRows, local] = await Promise.all([
       fetchSiteUsageSince(from).catch((): SiteUsageRow[] | null => null),
       fetchUsageSince(from).catch((e): UsageDayRow[] => {
         error = String((e as Error).message || e);
         return [];
       }),
-      chrome.storage.local.get(['pendingUsage', 'pendingSiteUsage']) as Promise<{
+      fetchFocusSince(from).catch((): FocusDayRow[] => {
+        focusError = true;
+        return [];
+      }),
+      chrome.storage.local.get(['pendingUsage', 'pendingSiteUsage', 'pendingFocus', 'focusLog', 'focus']) as Promise<{
         pendingUsage?: PendingUsage;
         pendingSiteUsage?: PendingSiteUsage;
+        pendingFocus?: FocusLog;
+        focusLog?: FocusLog; // history from before it was synced, until the next sync uploads it
+        focus?: FocusState;
       }>
     ]);
     siteError = siteRows === null && !error;
+
+    // Lock-in history: synced days plus whatever hasn't been synced yet.
+    const log: FocusLog = {};
+    for (const [day, d] of [
+      ...focusRows.map((r): [string, FocusDay] => [r.day, r]),
+      ...Object.entries(local.pendingFocus || {}),
+      ...Object.entries(local.focusLog || {})
+    ]) {
+      const sum = (log[day] ||= emptyFocusDay());
+      for (const k of FOCUS_KEYS) sum[k] += d[k] || 0;
+    }
+    // A session is only written to history when it ends, so add the one in progress.
+    if (local.focus && local.focus.phase !== 'break') {
+      const sum = (log[dayKey(today)] ||= emptyFocusDay());
+      sum.seconds += (local.focus.totalMs - focusLeft(local.focus)) / 1000;
+      sum.sessions += 1;
+      focusRunning = true;
+    }
+    const list: typeof focusDays = [];
+    for (let d = today; d >= start; d = addDays(d, -1)) {
+      if (log[dayKey(d)]) list.push({ date: d, d: log[dayKey(d)] });
+    }
+    focusDays = list;
 
     data = buildUsage(
       start, today,
@@ -111,6 +144,16 @@
 
   const thisWeek = $derived(days.length ? weekRow(WEEKS - 1) : null);
   const lastWeek = $derived(days.length ? weekRow(WEEKS - 2) : null);
+
+  function outcomes(d: FocusDay): string {
+    const parts = [
+      d.done && `${d.done} done`,
+      d.partly && `${d.partly} partly`,
+      d.pulled && `${d.pulled} pulled away`,
+      d.early && `${d.early} ended early`
+    ].filter(Boolean);
+    return parts.join(' · ') || '–';
+  }
 
   onMount(load);
 </script>
@@ -408,6 +451,40 @@
         <summary>Daily breakdown, last {range} weeks</summary>
         {@render table('Day', dayRows)}
       </details>
+    </div>
+  {/if}
+
+  {#if focusDays.length}
+    <div class="card">
+      <h2>Lock-in sessions</h2>
+      <p class="muted">Time spent locked in. YouTube watched during a session is listed here and not counted above.{focusRunning ? ' Today includes the session in progress.' : ''}</p>
+      {#if focusError && !error}
+        <p class="muted">Only sessions from this browser are shown: lock-in history isn't syncing. Run the "Lock-in mode" SQL from the README in Supabase.</p>
+      {/if}
+      <div class="scroll">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Day</th>
+              <th class="num">Locked in</th>
+              <th class="num">Sessions</th>
+              <th>How they went</th>
+              <th class="num">On YouTube</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each focusDays as row}
+              <tr>
+                <td>{dayFmt(row.date)}</td>
+                <td class="num total">{fmt(row.d.seconds)}</td>
+                <td class="num">{row.d.sessions}</td>
+                <td>{outcomes(row.d)}</td>
+                <td class="num">{fmt(row.d.video)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     </div>
   {/if}
 </div>

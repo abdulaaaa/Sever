@@ -45,6 +45,7 @@ CREATE TABLE settings (
   daily_limit_minutes INTEGER NOT NULL DEFAULT 60,
   budget_sites TEXT[] NOT NULL DEFAULT '{}',
   person_terms JSONB NOT NULL DEFAULT '{}',
+  focus_config JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -119,6 +120,53 @@ CREATE POLICY "Users can manage their own attempts"
 
 ```sql
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS person_terms JSONB NOT NULL DEFAULT '{}';
+```
+
+**Lock-in mode.** Run this to sync lock-in settings and session history. It is safe to run again:
+
+```sql
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS focus_config JSONB NOT NULL DEFAULT '{}';
+
+-- Lock-in history, one row per day
+CREATE TABLE IF NOT EXISTS focus_days (
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  day DATE NOT NULL,
+  seconds INTEGER NOT NULL DEFAULT 0,
+  sessions INTEGER NOT NULL DEFAULT 0,
+  video INTEGER NOT NULL DEFAULT 0,
+  done INTEGER NOT NULL DEFAULT 0,
+  partly INTEGER NOT NULL DEFAULT 0,
+  pulled INTEGER NOT NULL DEFAULT 0,
+  early INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
+
+-- Function to add to a day's lock-in history
+CREATE OR REPLACE FUNCTION add_focus(
+  p_day DATE, p_seconds INTEGER, p_sessions INTEGER, p_video INTEGER,
+  p_done INTEGER, p_partly INTEGER, p_pulled INTEGER, p_early INTEGER
+)
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO public.focus_days AS f (user_id, day, seconds, sessions, video, done, partly, pulled, early)
+  VALUES (auth.uid(), p_day, p_seconds, p_sessions, p_video, p_done, p_partly, p_pulled, p_early)
+  ON CONFLICT (user_id, day)
+  DO UPDATE SET
+    seconds = f.seconds + p_seconds,
+    sessions = f.sessions + p_sessions,
+    video = f.video + p_video,
+    done = f.done + p_done,
+    partly = f.partly + p_partly,
+    pulled = f.pulled + p_pulled,
+    early = f.early + p_early;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+ALTER TABLE focus_days ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage their own focus days" ON focus_days;
+CREATE POLICY "Users can manage their own focus days"
+  ON focus_days FOR ALL USING (auth.uid() = user_id);
 ```
 
 **Per-site usage (for the Analytics page).** If your database was set up before the Analytics page existed, run just this block:
@@ -281,6 +329,19 @@ For everyone under **People**, looking them up is blocked as well as their pages
 - **Extra terms**: add nicknames or other usernames per person in Settings. Removing them follows the settings lock.
 
 A first name on its own is never matched. This only covers this browser; allow the extension in incognito from `chrome://extensions/` to cover incognito windows.
+
+### Lock-in mode
+
+Start a focus session from the popup: type what you're working on, set the length (60 minutes by default) and click **Lock in**.
+
+- **Blocked for the session**: your daily-limit sites, plus a separate lock-in list you set in Settings.
+- **YouTube**: search and watching stay open. The home feed, Shorts, the side menu, suggestions and comments are removed, autoplay is switched off for the session, and time there doesn't count against your daily limit while the timer runs.
+- **Audio**: a YouTube video of your choice plays on a loop in a pinned tab from the start. If Chrome won't start the sound by itself, press play once in that tab.
+- **Pause**: stops the timer and the audio; the blocks stay on. After 10 minutes paused you get a reminder.
+- **Ending early**: type a sentence and wait 30 seconds.
+- **Afterwards**: a break timer (sites stay blocked during it), and the Analytics page lists your sessions.
+
+Lock-in settings and history sync through Supabase like everything else. A running session itself belongs to the Chrome profile it was started in.
 
 ### Settings Lock
 

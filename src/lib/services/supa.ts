@@ -1,7 +1,7 @@
 // Supabase client using official SDK for type-safe database operations
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../utils/config';
-import type { Session, Block, AttemptRecord, AttemptsMap, SiteUsageRow, UsageDayRow } from '../types';
+import type { Session, Block, AttemptRecord, AttemptsMap, SiteUsageRow, UsageDayRow, FocusDay, FocusDayRow } from '../types';
 
 // Initialize SDK client
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -187,6 +187,37 @@ export async function fetchUsageSince(fromDay: string): Promise<UsageDayRow[]> {
       .select('day, seconds')
       .gte('day', fromDay)
       .order('day', { ascending: true });
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return data || [];
+  });
+}
+
+// Add to a day's lock-in history.
+export async function addFocus(day: string, d: FocusDay): Promise<void> {
+  return withAuth(async () => {
+    const { error } = await supabase.rpc('add_focus', {
+      p_day: day,
+      p_seconds: d.seconds,
+      p_sessions: d.sessions,
+      p_video: d.video,
+      p_done: d.done,
+      p_partly: d.partly,
+      p_pulled: d.pulled,
+      p_early: d.early
+    });
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+  });
+}
+
+export async function fetchFocusSince(fromDay: string): Promise<FocusDayRow[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase
+      .from('focus_days')
+      .select('day, seconds, sessions, video, done, partly, pulled, early')
+      .gte('day', fromDay)
+      .order('day', { ascending: false });
 
     if (error) throw new Error(`Database error: ${error.message}`);
     return data || [];

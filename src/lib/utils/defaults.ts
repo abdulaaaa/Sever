@@ -2,7 +2,7 @@
 // into your Supabase database the first time you sign in.
 // After that, manage everything from the extension's settings page.
 
-import type { Block, Schedule, Settings } from '../types';
+import type { Block, Schedule, Settings, FocusConfig } from '../types';
 
 const NIGHT: Schedule = { start: "21:00", end: "12:00", days: [0, 1, 2, 3, 4, 5, 6] };
 
@@ -32,4 +32,11 @@ export const DEFAULT_SETTINGS: Settings = {
     "tiktok.com", "threads.net", "threads.com", "snapchat.com", "pinterest.com", "tumblr.com"
   ],
   settings_unlock_schedule: null  // null = no lock (always unlocked)
+};
+
+export const DEFAULT_FOCUS_CONFIG: FocusConfig = {
+  minutes: 60,
+  breakMinutes: 10,
+  video: "https://www.youtube.com/watch?v=Dq-h8LIe6II",
+  sites: []
 };

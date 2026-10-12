@@ -1,5 +1,5 @@
 // Matching, schedules and other shared helpers.
-import { DEFAULT_BLOCKS, DEFAULT_SETTINGS } from './defaults';
+import { DEFAULT_BLOCKS, DEFAULT_SETTINGS, DEFAULT_FOCUS_CONFIG } from './defaults';
 import { DEV_MODE } from './config';
 import { watchTokens, watchSquash, watchMatch, type WatchTerm } from './watch';
 import type {
@@ -12,7 +12,9 @@ import type {
   PendingUsage,
   AttemptRecord,
   Session,
-  Cache
+  Cache,
+  FocusState,
+  FocusDay
 } from '../types';
 
 export const ALIASES: Record<string, string> = { "twitter.com": "x.com" };
@@ -167,11 +169,12 @@ interface StorageData {
   session?: Session;
   lastError?: string;
   syncedAt?: number;
+  focus?: FocusState;
 }
 
 export async function loadState(): Promise<ExtensionState> {
   const s = await chrome.storage.local.get([
-    "cache", "pendingUsage", "pendingAttempts", "session", "lastError", "syncedAt"
+    "cache", "pendingUsage", "pendingAttempts", "session", "lastError", "syncedAt", "focus"
   ]) as StorageData;
 
   const blocks = s.cache?.blocks ?? DEFAULT_BLOCKS;
@@ -192,7 +195,9 @@ export async function loadState(): Promise<ExtensionState> {
     pendingAttempts: s.pendingAttempts || [],
     lastError: s.lastError || null,
     syncedAt: s.syncedAt || null,
-    usingDefaults: !s.cache
+    usingDefaults: !s.cache,
+    focus: s.focus || null,
+    focusConfig: { ...DEFAULT_FOCUS_CONFIG, ...settings.focus_config }
   };
 }
 
@@ -288,8 +293,48 @@ export function watchUrl(url: string, st: WatchState): WatchTerm | null {
   return null;
 }
 
+// ---------- lock-in mode ----------
+const YOUTUBE = "youtube.com";
+// The only parts of YouTube closed during a session; search and watching stay open.
+// Feed pages, Shorts, and a channel's Shorts tab ("/@name/shorts").
+export const FOCUS_YT_BLOCKED = "(feed|shorts|[^?#]*/shorts)";
+const FOCUS_YT_RE = new RegExp(`^([a-z0-9-]+\\.)*youtube\\.com/${FOCUS_YT_BLOCKED}(/|$)`);
+
+export const isYouTube = (url: string): boolean => matches(url, YOUTUBE);
+
+// "https://www.youtube.com/watch?v=abc&t=158s" -> "abc"
+export function videoId(link: string): string | null {
+  try {
+    const u = new URL(link);
+    if (normHost(u.hostname) === "youtu.be") return u.pathname.slice(1) || null;
+    if (!isYouTube(link)) return null;
+    // "/watch?v=ID", or "/live/ID", "/shorts/ID", "/embed/ID"
+    return u.searchParams.get("v") || u.pathname.match(/^\/(live|shorts|embed)\/([\w-]+)/)?.[2] || null;
+  } catch {
+    return null;
+  }
+}
+
+export const FOCUS_KEYS = ["seconds", "sessions", "video", "done", "partly", "pulled", "early"] as const;
+
+export const emptyFocusDay = (): FocusDay =>
+  ({ seconds: 0, sessions: 0, video: 0, done: 0, partly: 0, pulled: 0, early: 0 });
+
+// Time left in the current phase, in ms.
+export function focusLeft(f: FocusState, now: number = Date.now()): number {
+  return Math.max(0, f.phase === "paused" ? f.remainingMs || 0 : f.endsAt - now);
+}
+
+// Sites blocked for a whole session: the daily-limit sites, the lock-in list,
+// and whatever was on either when the session started. YouTube itself is
+// handled on its own.
+export function focusSites(st: Pick<ExtensionState, "settings" | "focusConfig" | "focus">): string[] {
+  const all = [...st.settings.budget_sites, ...st.focusConfig.sites, ...(st.focus?.sites || [])];
+  return [...new Set(all.map(normHost))].filter((d) => d !== YOUTUBE);
+}
+
 // What should happen to this address right now?
-// Returns null (allowed), { id } for a block, or { budget: true }.
+// Returns null (allowed), { id } for a block, { focus: true } or { budget: true }.
 export function decide(url: string, st: ExtensionState, date: Date = new Date()): DecisionResult | null {
   if (!normalize(url)) return null;
   const { blocks, settings, out } = st;
@@ -302,6 +347,12 @@ export function decide(url: string, st: ExtensionState, date: Date = new Date())
   }
   const hit = watchUrl(url, st);
   if (hit) return { id: hit.id, watch: true };
+  if (st.focus) {
+    const yt = isYouTube(url);
+    if (focusSites(st).some((d) => matches(url, d)) || (yt && FOCUS_YT_RE.test(normalize(url)))) return { focus: true };
+    // While the timer runs, YouTube is for work and ignores the daily limit.
+    if (yt && st.focus.phase === "focus") return null;
+  }
   if (out && isBudgetSite(url, settings)) return { budget: true };
   return null;
 }

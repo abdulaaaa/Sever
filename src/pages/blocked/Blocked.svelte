@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { loadState, scheduleLabel, timeLabel, summarize } from '../../lib/utils/common';
+  import { loadState, scheduleLabel, timeLabel, summarize, focusLeft } from '../../lib/utils/common';
   import { recordAttempt, loadAttempts } from '../../lib/services/supa';
   import { searchTarget } from '../../lib/utils/watch';
   import type { Block, ExtensionState, AttemptSummary } from '../../lib/types';
@@ -18,6 +18,17 @@
 
   async function show(): Promise<void> {
     const st = await loadState();
+
+    if (params.has('focus') && st.focus) {
+      const mins = Math.ceil(focusLeft(st.focus) / 60_000);
+      label = st.focus.phase === 'break' ? 'Break' : 'Locked in';
+      title = st.focus.task;
+      sub = st.focus.phase === 'paused'
+        ? 'Your session is paused. This stays blocked until the session ends.'
+        : `This is blocked for another ${mins} minute${mins === 1 ? '' : 's'}.`;
+      note = st.focus.phase === 'break' ? 'Step away from the screen for a bit.' : 'Back to it.';
+      return;
+    }
 
     if (params.has('budget')) {
       const mins = st.settings.daily_limit_minutes;

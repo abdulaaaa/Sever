@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { loadState, cleanTarget, scheduleLabel, schedActive, normHost, isSettingsLocked, nextUnlockTime, summarize } from '../../lib/utils/common';
+  import { loadState, cleanTarget, scheduleLabel, schedActive, normHost, isSettingsLocked, nextUnlockTime, summarize, videoId } from '../../lib/utils/common';
   import { loadAttempts, updateSettings, insertBlock, deleteBlock, updateBlock, renameAttemptTarget } from '../../lib/services/supa';
   import { watchSquash, searchTarget } from '../../lib/utils/watch';
   import type { ExtensionState, Block, Schedule, AttemptSummary } from '../../lib/types';
@@ -32,6 +32,15 @@
   let lockStart = $state('09:00');
   let lockEnd = $state('10:00');
   let lockDays = $state<number[]>([0, 1, 2, 3, 4, 5, 6]);
+
+  // Lock-in mode
+  let focusOn = $state(false); // a session is running: sites can be added but not removed
+  let focusMinutes = $state(60);
+  let focusBreak = $state(10);
+  let focusVideo = $state('');
+  let focusSites: string[] = $state([]);
+  let focusSiteInput = $state('');
+  let focusDirty = false; // unsaved edits in the lock-in fields: don't overwrite them when a sync lands
 
   // Data arrays
   let budgetSites: string[] = $state([]);
@@ -113,6 +122,54 @@
     }, `Renamed to "${trimmed}".`);
   }
 
+  function saveFocus(patch: Record<string, unknown>, done: string): void {
+    run(() => saveSettings({ focus_config: { ...st!.focusConfig, ...patch } }), done);
+  }
+
+  function handleFocusSave(e: Event): void {
+    e.preventDefault();
+    const video = focusVideo.trim();
+    if (video && !videoId(video)) {
+      toast("That doesn't look like a YouTube video link.");
+      return;
+    }
+    const whole = (n: unknown, min: number, max: number): boolean =>
+      typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max;
+    if (!whole(focusMinutes, 1, 480)) {
+      toast('Sessions can be 1 to 480 minutes.');
+      return;
+    }
+    if (!whole(focusBreak, 0, 60)) {
+      toast('Breaks can be 0 to 60 minutes.');
+      return;
+    }
+    focusDirty = false;
+    saveFocus({ minutes: focusMinutes, breakMinutes: focusBreak, video }, 'Saved.');
+  }
+
+  function handleAddFocusSite(e: Event): void {
+    e.preventDefault();
+    const site = cleanTarget(focusSiteInput, 'site');
+    if (!site) {
+      toast('Enter a website, e.g. bbc.co.uk');
+      return;
+    }
+    if (site === 'youtube.com') {
+      toast('YouTube is already cut down to search and watching during a session.');
+      return;
+    }
+    focusSiteInput = '';
+    saveFocus({ sites: [...new Set([...focusSites, site])] }, 'Added.');
+  }
+
+  function handleRemoveFocusSite(site: string): void {
+    if (focusOn) {
+      toast("Sites can't be removed during a session.");
+      return;
+    }
+    saveFocus({ sites: focusSites.filter((s) => s !== site) }, 'Removed.');
+  }
+
   // Extra names and usernames that count as looking a person up.
   function personTerms(name: string): string[] {
     return st?.settings.person_terms?.[name] || [];
@@ -172,6 +229,15 @@
     // Allowed
     allowedBlocks = st.blocks.filter((b) => b.kind === 'allow');
 
+    // Lock-in mode
+    focusOn = !!st.focus;
+    if (!focusDirty) {
+      focusMinutes = st.focusConfig.minutes;
+      focusBreak = st.focusConfig.breakMinutes;
+      focusVideo = st.focusConfig.video;
+    }
+    focusSites = [...st.focusConfig.sites];
+
     // Settings lock
     const lockSched = st.settings.settings_unlock_schedule;
     lockEnabled = !!lockSched;
@@ -201,6 +267,10 @@
   }
 
   function handleRemoveBudgetSite(site: string): void {
+    if (focusOn) {
+      toast("Sites can't be removed during a session.");
+      return;
+    }
     if (!confirm(`Stop counting ${site} toward the daily limit?`)) return;
     run(() => saveSettings({ budget_sites: st!.settings.budget_sites.filter((s) => s !== site) }), 'Removed.');
   }
@@ -283,6 +353,10 @@
     const t = cleanTarget(allowLink, 'page');
     if (!t) {
       toast("That doesn't look like a link.");
+      return;
+    }
+    if (focusOn) {
+      toast("Pages can't be allowed during a session.");
       return;
     }
     if (exists('allow', t)) {
@@ -389,7 +463,7 @@
     render();
 
     const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if (changes.cache || changes.session || changes.syncedAt || changes.lastError) {
+      if (changes.cache || changes.session || changes.syncedAt || changes.lastError || changes.focus) {
         render();
       }
     };
@@ -674,6 +748,38 @@
       </div>
       <form class="add" onsubmit={handleAddBudget}>
         <input type="text" bind:value={budgetInput} placeholder="Add a site, e.g. tiktok.com">
+        <button>Add site</button>
+      </form>
+    </div>
+  </fieldset>
+
+  <!-- Lock-in Card - always editable -->
+  <fieldset>
+    <div class="card">
+      <h2>Lock-in mode</h2>
+      <p class="muted">
+        Start a session from the popup. Until it ends, your daily-limit sites and the sites below are blocked, and YouTube is cut down to search and watching.
+      </p>
+      <form class="limit-row" onsubmit={handleFocusSave} oninput={() => (focusDirty = true)}>
+        <input type="number" bind:value={focusMinutes} min="1" max="480" step="1" required>
+        <span>minute sessions,</span>
+        <input type="number" bind:value={focusBreak} min="0" max="60" step="1" required>
+        <span>minute breaks</span>
+        <input type="text" bind:value={focusVideo} placeholder="YouTube link to play during a session (optional)" style="flex:1 1 260px;width:auto">
+        <button>Save</button>
+      </form>
+      <div class="chips">
+        {#each focusSites as site}
+          <span class="chip">
+            {site}
+            <button type="button" class="link" title="Remove {site}" onclick={() => handleRemoveFocusSite(site)} disabled={focusOn}>&times;</button>
+          </span>
+        {:else}
+          <span class="empty">No extra sites yet. Add news, shopping or anything else that pulls you away.</span>
+        {/each}
+      </div>
+      <form class="add" onsubmit={handleAddFocusSite}>
+        <input type="text" bind:value={focusSiteInput} placeholder="Block a site during sessions, e.g. bbc.co.uk">
         <button>Add site</button>
       </form>
     </div>
