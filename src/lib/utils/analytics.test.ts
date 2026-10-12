@@ -52,6 +52,8 @@ describe('buildUsage', () => {
     expect(build(EXTRA).firstData).toBe(2);
     const onlyExtra = buildUsage(START, TODAY, [SITE_ROWS[2]], [], {}, {}, 7, EXTRA);
     expect(onlyExtra.firstData).toBe(8);
+    expect(onlyExtra.firstLimit).toBe(-1);
+    expect(onlyExtra.firstExtra).toBe(8);
     expect(buildUsage(START, TODAY, [], [], {}, {}, 7, EXTRA).firstData).toBe(-1);
   });
 
@@ -105,6 +107,59 @@ describe('weekAverage', () => {
     expect(week.total).toBe(0);
     expect(week.extra).toEqual({ 'extra:youtube.com': 300, 'extra:whatsapp.com': 0 });
     expect(week.totalAll).toBe(300);
+  });
+
+  it('averages tracked-only time from the day it was first recorded', () => {
+    // Limit time since Monday, YouTube only since Thursday.
+    const data = buildUsage(
+      START,
+      TODAY,
+      [
+        { day: '2026-09-28', site: 'reddit.com', seconds: 700 },
+        { day: '2026-10-01', site: 'extra:youtube.com', seconds: 400 }
+      ],
+      [{ day: '2026-09-28', seconds: 700 }],
+      {},
+      {},
+      7,
+      EXTRA
+    );
+    const week = weekAverage(data, 0)!;
+    expect(week.n).toBe(7);
+    expect(week.total).toBe(100);
+    expect(week.extra['extra:youtube.com']).toBe(100);
+    expect(week.totalAll).toBe(200);
+  });
+
+  it('averages limit time from its own first day when tracked-only time is older', () => {
+    const data = buildUsage(
+      START,
+      TODAY,
+      [
+        { day: '2026-09-28', site: 'extra:youtube.com', seconds: 700 },
+        { day: '2026-10-01', site: 'reddit.com', seconds: 400 }
+      ],
+      [{ day: '2026-10-01', seconds: 400 }],
+      {},
+      {},
+      7,
+      EXTRA
+    );
+    const week = weekAverage(data, 0)!;
+    expect(week.n).toBe(7);
+    expect(week.total).toBe(100);
+    expect(week.values).toEqual({ 'reddit.com': 100 });
+    expect(week.extra['extra:youtube.com']).toBe(100);
+    expect(week.totalAll).toBe(200);
+  });
+
+  it('shows no limit average when only tracked-only time exists', () => {
+    const data = buildUsage(START, TODAY, [SITE_ROWS[2]], [], {}, {}, 7, EXTRA);
+    const week = weekAverage(data, 1)!;
+    expect(week.n).toBe(2);
+    expect(week.total).toBe(0);
+    expect(week.extra['extra:youtube.com']).toBe(450);
+    expect(week.totalAll).toBe(450);
   });
 
   it('returns null outside the range or without any data', () => {

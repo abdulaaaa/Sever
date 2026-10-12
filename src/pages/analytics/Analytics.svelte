@@ -49,7 +49,14 @@
   let loading = $state(true);
   let error = $state('');
   let siteError = $state(false);
-  let data: UsageData = $state.raw({ days: [], series: [], extra: [], firstData: -1 });
+  let data: UsageData = $state.raw({
+    days: [],
+    series: [],
+    extra: [],
+    firstData: -1,
+    firstLimit: -1,
+    firstExtra: -1
+  });
   let range = $state(4); // weeks shown in the chart
   let withExtra = $state(false); // also show YouTube and WhatsApp, which don't count against the limit
   let hover: number | null = $state(null);
