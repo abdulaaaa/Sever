@@ -29,11 +29,20 @@ import {
   focusLeft,
   focusSites,
   trackingFor,
+  creditUsage,
   countsWhileIdle,
   decide
 } from './common';
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS, DEFAULT_FOCUS_CONFIG } from './defaults';
-import type { Block, ExtensionState, FocusState, Schedule, Settings } from '../types';
+import type {
+  Block,
+  ExtensionState,
+  FocusState,
+  PendingSiteUsage,
+  PendingUsage,
+  Schedule,
+  Settings
+} from '../types';
 
 describe('test environment', () => {
   it('uses stub configuration, not the real .env', () => {
@@ -581,6 +590,36 @@ describe('trackingFor', () => {
     const settings: Settings = { ...DEFAULT_SETTINGS, budget_sites: ['youtube.com'] };
     expect(trackingFor(YT, state({ settings }), 5)).toEqual({ since: 5, site: 'youtube.com' });
     expect(trackingFor(YT, state({ settings, out: true }), 5)).toBeNull();
+  });
+});
+
+describe('creditUsage', () => {
+  const DAY = '2026-10-07';
+
+  it('adds budget-site time to the daily total and to the site', () => {
+    const usage: PendingUsage = { [DAY]: 10 };
+    const sites: PendingSiteUsage = { [DAY]: { 'reddit.com': 4 } };
+    creditUsage({ since: 0, site: 'reddit.com' }, 30, DAY, usage, sites);
+    expect(usage).toEqual({ [DAY]: 40 });
+    expect(sites).toEqual({ [DAY]: { 'reddit.com': 34 } });
+  });
+
+  it('keeps tracked-only time out of the daily total, under its own key', () => {
+    const usage: PendingUsage = { [DAY]: 10 };
+    const sites: PendingSiteUsage = {};
+    creditUsage({ since: 0, site: 'youtube.com', extra: true }, 30, DAY, usage, sites);
+    creditUsage({ since: 0, site: 'whatsapp.com', extra: true }, 5, DAY, usage, sites);
+    expect(usage).toEqual({ [DAY]: 10 });
+    expect(sites).toEqual({ [DAY]: { 'extra:youtube.com': 30, 'extra:whatsapp.com': 5 } });
+  });
+
+  it('records nothing for lock-in YouTube or for no time', () => {
+    const usage: PendingUsage = {};
+    const sites: PendingSiteUsage = {};
+    creditUsage({ since: 0, focusVideo: true }, 30, DAY, usage, sites);
+    creditUsage({ since: 0, site: 'reddit.com' }, 0, DAY, usage, sites);
+    expect(usage).toEqual({});
+    expect(sites).toEqual({});
   });
 });
 

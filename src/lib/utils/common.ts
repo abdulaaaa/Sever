@@ -1,6 +1,6 @@
 // Matching, schedules and other shared helpers.
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS, DEFAULT_FOCUS_CONFIG } from './defaults';
-import { DEV_MODE, EXTRA_SITES } from './config';
+import { DEV_MODE, EXTRA_SITES, EXTRA_PREFIX } from './config';
 import { watchTokens, watchSquash, watchMatch, type WatchTerm } from './watch';
 import type {
   Block,
@@ -10,6 +10,7 @@ import type {
   DecisionResult,
   AttemptSummary,
   PendingUsage,
+  PendingSiteUsage,
   AttemptRecord,
   Session,
   Cache,
@@ -370,6 +371,25 @@ export const FOCUS_YT_BLOCKED = '(feed|shorts|[^?#]*/shorts)';
 const FOCUS_YT_RE = new RegExp(`^([a-z0-9-]+\\.)*youtube\\.com/${FOCUS_YT_BLOCKED}(/|$)`);
 
 export const isYouTube = (url: string): boolean => matches(url, YOUTUBE);
+
+// Adds counted seconds to the totals that haven't synced yet. A tracked-only site is
+// recorded per site under its own key and left out of the day's total, so it can never
+// use up the daily limit. Lock-in YouTube is logged with the session, not here.
+export function creditUsage(
+  tracking: TrackingState,
+  secs: number,
+  day: string,
+  pendingUsage: PendingUsage,
+  pendingSiteUsage: PendingSiteUsage
+): void {
+  if (tracking.focusVideo || secs <= 0) return;
+  if (!tracking.extra) pendingUsage[day] = (pendingUsage[day] || 0) + secs;
+  if (tracking.site) {
+    const key = tracking.extra ? EXTRA_PREFIX + tracking.site : tracking.site;
+    const sites = (pendingSiteUsage[day] ||= {});
+    sites[key] = (sites[key] || 0) + secs;
+  }
+}
 
 // A YouTube video that is playing keeps counting with no mouse or keyboard input.
 // Not during a lock-in session, and not if YouTube is a budget site.
