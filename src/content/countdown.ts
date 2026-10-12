@@ -1,12 +1,11 @@
 // Countdown pill that shows remaining time on budget sites
-(function(): void {
+(function (): void {
   'use strict';
 
   let pill: HTMLDivElement | null = null;
   let tickInterval: ReturnType<typeof setInterval> | null = null;
   let syncInterval: ReturnType<typeof setInterval> | null = null;
   let localRemaining: number = 0; // Local countdown in seconds
-  let lastSync: number = 0;
 
   // Format seconds to "MM:SS" or "H:MM:SS"
   function formatTime(seconds: number): string {
@@ -94,10 +93,11 @@
   // Sync with background to get accurate time
   async function syncWithBackground(): Promise<void> {
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'getTimeLeft' }) as GetTimeLeftResponse;
+      const response = (await chrome.runtime.sendMessage({
+        type: 'getTimeLeft'
+      })) as GetTimeLeftResponse;
       if (response && typeof response.remaining === 'number') {
         localRemaining = response.remaining;
-        lastSync = Date.now();
         updatePill(localRemaining);
 
         // If out of time, trigger immediate check
@@ -157,7 +157,9 @@
   // Check if current page should show countdown
   async function checkShouldShow(): Promise<void> {
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'shouldShowCountdown' }) as ShouldShowCountdownResponse;
+      const response = (await chrome.runtime.sendMessage({
+        type: 'shouldShowCountdown'
+      })) as ShouldShowCountdownResponse;
       if (response && response.show) {
         startCountdown();
       } else {

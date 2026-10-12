@@ -1,10 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { loadState, scheduleLabel, timeLabel, summarize, focusLeft } from '../../lib/utils/common';
+  import {
+    loadState,
+    scheduleLabel,
+    timeLabel,
+    summarize,
+    focusLeft
+  } from '../../lib/utils/common';
   import { recordAttempt, loadAttempts } from '../../lib/services/supa';
   import { searchTarget } from '../../lib/utils/watch';
-  import type { Block, ExtensionState, AttemptSummary } from '../../lib/types';
+  import type { AttemptSummary } from '../../lib/types';
 
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- read-only
   const params = new URLSearchParams(location.search);
 
   let label = $state('Blocked');
@@ -23,9 +30,10 @@
       const mins = Math.ceil(focusLeft(st.focus) / 60_000);
       label = st.focus.phase === 'break' ? 'Break' : 'Locked in';
       title = st.focus.task;
-      sub = st.focus.phase === 'paused'
-        ? 'Your session is paused. This stays blocked until the session ends.'
-        : `This is blocked for another ${mins} minute${mins === 1 ? '' : 's'}.`;
+      sub =
+        st.focus.phase === 'paused'
+          ? 'Your session is paused. This stays blocked until the session ends.'
+          : `This is blocked for another ${mins} minute${mins === 1 ? '' : 's'}.`;
       note = st.focus.phase === 'break' ? 'Step away from the screen for a bit.' : 'Back to it.';
       return;
     }
@@ -73,7 +81,10 @@
     // A blocked link shows its own count. A search is counted against the
     // person, so show their total: every link plus searches.
     const targets = params.has('w')
-      ? [...st.blocks.filter((b) => b.person === block.person).map((b) => b.target), searchTarget(block.person)]
+      ? [
+          ...st.blocks.filter((b) => b.person === block.person).map((b) => b.target),
+          searchTarget(block.person)
+        ]
       : [block.target];
     const attempts = await loadAttempts(targets.length === 1 ? targets[0] : undefined);
     const c = summarize(targets.flatMap((t) => attempts[t] || []));
@@ -88,6 +99,34 @@
     show();
   });
 </script>
+
+<main class="card">
+  <p class="label">{label}</p>
+  <h1>
+    {#if titleHighlight}
+      <span>{titleHighlight}</span>
+    {:else}
+      {title}
+    {/if}
+  </h1>
+  <p class="sub">{sub}</p>
+
+  {#if showCounts}
+    <div class="tiles">
+      <div class="tile"><b>{counts.today}</b><span class="muted small">today</span></div>
+      <div class="tile"><b>{counts.week}</b><span class="muted small">this week</span></div>
+      <div class="tile"><b>{counts.total}</b><span class="muted small">in total</span></div>
+    </div>
+  {/if}
+
+  {#if showBar}
+    <div class="bar-container">
+      <div class="bar out"><i style="width:100%"></i></div>
+    </div>
+  {/if}
+
+  <p class="note">{note}</p>
+</main>
 
 <style>
   :global(body) {
@@ -138,31 +177,3 @@
     margin: 0 auto;
   }
 </style>
-
-<main class="card">
-  <p class="label">{label}</p>
-  <h1>
-    {#if titleHighlight}
-      <span>{titleHighlight}</span>
-    {:else}
-      {title}
-    {/if}
-  </h1>
-  <p class="sub">{sub}</p>
-
-  {#if showCounts}
-    <div class="tiles">
-      <div class="tile"><b>{counts.today}</b><span class="muted small">today</span></div>
-      <div class="tile"><b>{counts.week}</b><span class="muted small">this week</span></div>
-      <div class="tile"><b>{counts.total}</b><span class="muted small">in total</span></div>
-    </div>
-  {/if}
-
-  {#if showBar}
-    <div class="bar-container">
-      <div class="bar out"><i style="width:100%"></i></div>
-    </div>
-  {/if}
-
-  <p class="note">{note}</p>
-</main>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { loadState, schedActive, timeLabel, focusLeft } from '../../lib/utils/common';
-  import type { ExtensionState, FocusState, FocusUnrated } from '../../lib/types';
+  import type { FocusState, FocusUnrated } from '../../lib/types';
 
   let notice = $state('');
   let showNotice = $state(false);
@@ -39,7 +39,7 @@
 
   async function syncTime(): Promise<void> {
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'getTimeLeft' }) as {
+      const response = (await chrome.runtime.sendMessage({ type: 'getTimeLeft' })) as {
         remaining: number;
         tracking?: boolean;
       };
@@ -106,9 +106,13 @@
     return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
   }
 
-  function onFocusChange(changes: Record<string, chrome.storage.StorageChange>, area: string): void {
+  function onFocusChange(
+    changes: Record<string, chrome.storage.StorageChange>,
+    area: string
+  ): void {
     if (area !== 'local') return;
-    if (changes.focusUnrated) unrated = (changes.focusUnrated.newValue as FocusUnrated | null | undefined) || null;
+    if (changes.focusUnrated)
+      unrated = (changes.focusUnrated.newValue as FocusUnrated | null | undefined) || null;
     if (!changes.focus) return;
     focus = (changes.focus.newValue as FocusState | null | undefined) || null;
     ending = false;
@@ -158,7 +162,9 @@
     startTicking();
 
     // Active blocks
-    const active = st.blocks.filter((b) => b.kind !== 'allow' && b.schedule && schedActive(b.schedule));
+    const active = st.blocks.filter(
+      (b) => b.kind !== 'allow' && b.schedule && schedActive(b.schedule)
+    );
     const groups: Record<string, string[]> = {};
     for (const b of active) {
       const end = b.schedule!.end;
@@ -180,7 +186,9 @@
     const st = await loadState();
     focus = st.focus;
     focusMinutes = st.focusConfig.minutes;
-    const saved = await chrome.storage.local.get('focusUnrated') as { focusUnrated?: FocusUnrated | null };
+    const saved = (await chrome.storage.local.get('focusUnrated')) as {
+      focusUnrated?: FocusUnrated | null;
+    };
     unrated = saved.focusUnrated || null;
     chrome.storage.onChanged.addListener(onFocusChange);
     clockInterval = setInterval(() => (now = Date.now()), 1000);
@@ -192,6 +200,112 @@
     if (clockInterval) clearInterval(clockInterval);
   });
 </script>
+
+<header>
+  <h1>Sever</h1>
+  <div>
+    <button onclick={openAnalytics}>Analytics</button>
+    <button class="primary" onclick={openSettings}>Settings</button>
+  </div>
+</header>
+
+{#if showNotice}
+  <div class="notice">{notice}</div>
+{/if}
+
+<main>
+  <div class="tile">
+    {#if unrated}
+      <div class="rate">
+        <span class="muted small">How did "{unrated.task}" go?</span>
+        <div class="line">
+          <button onclick={() => send('focusOutcome', { outcome: 'done' })}>Done</button>
+          <button onclick={() => send('focusOutcome', { outcome: 'partly' })}>Partly</button>
+          <button onclick={() => send('focusOutcome', { outcome: 'pulled' })}
+            >Got pulled away</button
+          >
+        </div>
+      </div>
+    {/if}
+    {#if !focus}
+      <span class="muted small">Lock in</span>
+      <form class="lockin" onsubmit={startFocus}>
+        <input
+          type="text"
+          bind:value={focusTask}
+          placeholder="What are you working on?"
+          maxlength="80"
+          required
+        />
+        <div class="line">
+          <input type="number" bind:value={focusMinutes} min="1" max="480" required />
+          <span class="muted">minutes</span>
+          <button class="primary">Lock in</button>
+        </div>
+      </form>
+    {:else}
+      <span class="muted small">
+        {focus.phase === 'break' ? 'Break' : focus.phase === 'paused' ? 'Paused' : 'Locked in'} · {focus.task}
+      </span>
+      <b>{clock(focusLeft(focus, now))}</b>
+      {#if focus.phase === 'break'}
+        <div class="line">
+          <button onclick={() => send('focusSkipBreak')}>End break</button>
+        </div>
+      {:else}
+        <div class="line">
+          {#if focus.phase === 'paused'}
+            <button class="primary" style="margin-left:0" onclick={() => send('focusResume')}
+              >Resume</button
+            >
+          {:else}
+            <button onclick={() => send('focusPause')}>Pause</button>
+          {/if}
+          <button class="link" onclick={() => (ending = !ending)}>End early</button>
+        </div>
+        {#if ending}
+          <div class="end">
+            <p class="muted small">To end early, type: <i>{END_SENTENCE}</i></p>
+            <input
+              type="text"
+              bind:value={endText}
+              oninput={checkEnd}
+              onpaste={(e) => e.preventDefault()}
+              ondrop={(e) => e.preventDefault()}
+              autocomplete="off"
+            />
+            <button disabled={!canEnd} onclick={() => send('focusEnd')}>
+              {endReadyAt && !canEnd
+                ? `Wait ${Math.ceil((endReadyAt - now) / 1000)}s`
+                : 'End session'}
+            </button>
+          </div>
+        {/if}
+      {/if}
+    {/if}
+  </div>
+
+  <div class="tile">
+    <span class="muted small">Social media today</span>
+    <div class="row">
+      <b>{timeLeft}</b>
+      <span class="muted">{usedText}</span>
+    </div>
+    <div class={barClass}>
+      <i style="width: {fillPercent}%"></i>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Blocked right now</h2>
+    <ul>
+      <!-- eslint-disable-next-line svelte/require-each-key -- entries may repeat -->
+      {#each activeBlocks as item}
+        <li class={item.text.includes('Only your') ? 'muted' : ''}>{item.text}</li>
+      {/each}
+    </ul>
+  </div>
+</main>
 
 <style>
   :global(body) {
@@ -215,7 +329,8 @@
     display: grid;
     gap: 12px;
   }
-  .tile, .card {
+  .tile,
+  .card {
     margin: 0;
   }
   .row {
@@ -284,89 +399,3 @@
     font-size: 12px;
   }
 </style>
-
-<header>
-  <h1>Sever</h1>
-  <div>
-    <button onclick={openAnalytics}>Analytics</button>
-    <button class="primary" onclick={openSettings}>Settings</button>
-  </div>
-</header>
-
-{#if showNotice}
-  <div class="notice">{notice}</div>
-{/if}
-
-<main>
-  <div class="tile">
-    {#if unrated}
-      <div class="rate">
-        <span class="muted small">How did "{unrated.task}" go?</span>
-        <div class="line">
-          <button onclick={() => send('focusOutcome', { outcome: 'done' })}>Done</button>
-          <button onclick={() => send('focusOutcome', { outcome: 'partly' })}>Partly</button>
-          <button onclick={() => send('focusOutcome', { outcome: 'pulled' })}>Got pulled away</button>
-        </div>
-      </div>
-    {/if}
-    {#if !focus}
-      <span class="muted small">Lock in</span>
-      <form class="lockin" onsubmit={startFocus}>
-        <input type="text" bind:value={focusTask} placeholder="What are you working on?" maxlength="80" required>
-        <div class="line">
-          <input type="number" bind:value={focusMinutes} min="1" max="480" required>
-          <span class="muted">minutes</span>
-          <button class="primary">Lock in</button>
-        </div>
-      </form>
-    {:else}
-      <span class="muted small">
-        {focus.phase === 'break' ? 'Break' : focus.phase === 'paused' ? 'Paused' : 'Locked in'} · {focus.task}
-      </span>
-      <b>{clock(focusLeft(focus, now))}</b>
-      {#if focus.phase === 'break'}
-        <div class="line">
-          <button onclick={() => send('focusSkipBreak')}>End break</button>
-        </div>
-      {:else}
-        <div class="line">
-          {#if focus.phase === 'paused'}
-            <button class="primary" style="margin-left:0" onclick={() => send('focusResume')}>Resume</button>
-          {:else}
-            <button onclick={() => send('focusPause')}>Pause</button>
-          {/if}
-          <button class="link" onclick={() => (ending = !ending)}>End early</button>
-        </div>
-        {#if ending}
-          <div class="end">
-            <p class="muted small">To end early, type: <i>{END_SENTENCE}</i></p>
-            <input type="text" bind:value={endText} oninput={checkEnd} onpaste={(e) => e.preventDefault()} ondrop={(e) => e.preventDefault()} autocomplete="off">
-            <button disabled={!canEnd} onclick={() => send('focusEnd')}>
-              {endReadyAt && !canEnd ? `Wait ${Math.ceil((endReadyAt - now) / 1000)}s` : 'End session'}
-            </button>
-          </div>
-        {/if}
-      {/if}
-    {/if}
-  </div>
-
-  <div class="tile">
-    <span class="muted small">Social media today</span>
-    <div class="row">
-      <b>{timeLeft}</b>
-      <span class="muted">{usedText}</span>
-    </div>
-    <div class={barClass}>
-      <i style="width: {fillPercent}%"></i>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Blocked right now</h2>
-    <ul>
-      {#each activeBlocks as item}
-        <li class={item.text.includes('Only your') ? 'muted' : ''}>{item.text}</li>
-      {/each}
-    </ul>
-  </div>
-</main>

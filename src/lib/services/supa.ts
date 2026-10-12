@@ -1,7 +1,17 @@
 // Supabase client using official SDK for type-safe database operations
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../utils/config';
-import type { Session, Block, AttemptRecord, AttemptsMap, SiteUsageRow, UsageDayRow, FocusDay, FocusDayRow } from '../types';
+import type {
+  Session,
+  Block,
+  Settings,
+  AttemptRecord,
+  AttemptsMap,
+  SiteUsageRow,
+  UsageDayRow,
+  FocusDay,
+  FocusDayRow
+} from '../types';
 
 // Initialize SDK client
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -10,7 +20,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 // Session management (still use chrome.storage for persistence)
 export async function getSession(): Promise<Session | null> {
-  const { session } = await chrome.storage.local.get("session") as { session?: Session };
+  const { session } = (await chrome.storage.local.get('session')) as { session?: Session };
   return session || null;
 }
 
@@ -26,7 +36,7 @@ async function setSupabaseSession(session: Session | null): Promise<void> {
 // Helper to execute database operations with auth
 async function withAuth<T>(fn: () => Promise<T>): Promise<T> {
   const session = await getSession();
-  if (!session) throw new Error("signed-out");
+  if (!session) throw new Error('signed-out');
 
   await setSupabaseSession(session);
 
@@ -37,8 +47,8 @@ async function withAuth<T>(fn: () => Promise<T>): Promise<T> {
       refresh_token: session.refresh_token
     });
     if (error) {
-      await chrome.storage.local.remove("session");
-      throw new Error("Session expired");
+      await chrome.storage.local.remove('session');
+      throw new Error('Session expired');
     }
     if (data.session) {
       const newSession: Session = {
@@ -67,7 +77,7 @@ export async function fetchBlocks(): Promise<Block[]> {
   });
 }
 
-export async function fetchSettings(): Promise<any[]> {
+export async function fetchSettings(): Promise<Settings[]> {
   return withAuth(async () => {
     const { data, error } = await supabase.from('settings').select('*');
     if (error) throw new Error(`Database error: ${error.message}`);
@@ -75,43 +85,34 @@ export async function fetchSettings(): Promise<any[]> {
   });
 }
 
-export async function fetchUsage(day: string): Promise<any[]> {
+export async function fetchUsage(day: string): Promise<Pick<UsageDayRow, 'seconds'>[]> {
   return withAuth(async () => {
-    const { data, error } = await supabase
-      .from('usage')
-      .select('seconds')
-      .eq('day', day);
+    const { data, error } = await supabase.from('usage').select('seconds').eq('day', day);
 
     if (error) throw new Error(`Database error: ${error.message}`);
     return data || [];
   });
 }
 
-export async function insertBlocks(rows: any[]): Promise<Block[]> {
+export async function insertBlocks(rows: Omit<Block, 'id'>[]): Promise<Block[]> {
   return withAuth(async () => {
-    const { data, error } = await supabase
-      .from('blocks')
-      .insert(rows)
-      .select();
+    const { data, error } = await supabase.from('blocks').insert(rows).select();
 
     if (error) throw new Error(`Database error: ${error.message}`);
     return data || [];
   });
 }
 
-export async function insertSettings(rows: any[]): Promise<any[]> {
+export async function insertSettings(rows: Settings[]): Promise<Settings[]> {
   return withAuth(async () => {
-    const { data, error } = await supabase
-      .from('settings')
-      .insert(rows)
-      .select();
+    const { data, error } = await supabase.from('settings').insert(rows).select();
 
     if (error) throw new Error(`Database error: ${error.message}`);
     return data || [];
   });
 }
 
-export async function updateSettings(userId: string, updates: any): Promise<void> {
+export async function updateSettings(userId: string, updates: Partial<Settings>): Promise<void> {
   return withAuth(async () => {
     const { error } = await supabase
       .from('settings')
@@ -122,7 +123,7 @@ export async function updateSettings(userId: string, updates: any): Promise<void
   });
 }
 
-export async function insertBlock(row: any): Promise<void> {
+export async function insertBlock(row: Partial<Block>): Promise<void> {
   return withAuth(async () => {
     const { error } = await supabase.from('blocks').insert([row]);
     if (error) throw new Error(`Database error: ${error.message}`);
@@ -131,12 +132,12 @@ export async function insertBlock(row: any): Promise<void> {
 
 export async function deleteBlock(id: string): Promise<void> {
   return withAuth(async () => {
-    const { error} = await supabase.from('blocks').delete().eq('id', id);
+    const { error } = await supabase.from('blocks').delete().eq('id', id);
     if (error) throw new Error(`Database error: ${error.message}`);
   });
 }
 
-export async function updateBlock(id: string, updates: any): Promise<void> {
+export async function updateBlock(id: string, updates: Partial<Block>): Promise<void> {
   return withAuth(async () => {
     const { error } = await supabase.from('blocks').update(updates).eq('id', id);
     if (error) throw new Error(`Database error: ${error.message}`);
@@ -239,7 +240,9 @@ export async function recordAttempt(target: string): Promise<void> {
       if (error) throw error;
     });
   } catch {
-    const { pendingAttempts = [] } = await chrome.storage.local.get("pendingAttempts") as { pendingAttempts?: AttemptRecord[] };
+    const { pendingAttempts = [] } = (await chrome.storage.local.get('pendingAttempts')) as {
+      pendingAttempts?: AttemptRecord[];
+    };
     pendingAttempts.push(row);
     await chrome.storage.local.set({ pendingAttempts });
   }
@@ -247,7 +250,9 @@ export async function recordAttempt(target: string): Promise<void> {
 
 // Move attempts saved under one name to another, e.g. when a person is renamed.
 export async function renameAttemptTarget(from: string, to: string): Promise<void> {
-  const { pendingAttempts = [] } = await chrome.storage.local.get("pendingAttempts") as { pendingAttempts?: AttemptRecord[] };
+  const { pendingAttempts = [] } = (await chrome.storage.local.get('pendingAttempts')) as {
+    pendingAttempts?: AttemptRecord[];
+  };
   if (pendingAttempts.some((r) => r.target === from)) {
     await chrome.storage.local.set({
       pendingAttempts: pendingAttempts.map((r) => (r.target === from ? { ...r, target: to } : r))
@@ -302,14 +307,18 @@ export async function loadAttempts(target?: string): Promise<AttemptsMap> {
       return rows;
     });
   } catch {
-    const { attemptsCache } = await chrome.storage.local.get("attemptsCache") as { attemptsCache?: AttemptRow[] };
+    const { attemptsCache } = (await chrome.storage.local.get('attemptsCache')) as {
+      attemptsCache?: AttemptRow[];
+    };
     server = attemptsCache || [];
     if (target) server = server.filter((r) => r.target === target);
   }
 
   server.forEach((r) => add(r.target, r.at));
 
-  const { pendingAttempts = [] } = await chrome.storage.local.get("pendingAttempts") as { pendingAttempts?: AttemptRecord[] };
+  const { pendingAttempts = [] } = (await chrome.storage.local.get('pendingAttempts')) as {
+    pendingAttempts?: AttemptRecord[];
+  };
   pendingAttempts.filter((r) => !target || r.target === target).forEach((r) => add(r.target, r.at));
 
   return out;

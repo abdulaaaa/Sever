@@ -41,20 +41,28 @@ function drawPill(): void {
     // A closed shadow root keeps the task text out of reach of the page's own scripts.
     host = document.createElement('div');
     host.id = 'sever-focus';
-    host.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483647;pointer-events:none';
+    host.style.cssText =
+      'position:fixed;bottom:16px;right:16px;z-index:2147483647;pointer-events:none';
     pill = document.createElement('div');
     pill.style.cssText = [
-      'max-width:320px', 'padding:8px 14px', 'border-radius:999px',
-      'font:600 13px/1.3 system-ui,-apple-system,sans-serif', 'color:#fff',
-      'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis',
+      'max-width:320px',
+      'padding:8px 14px',
+      'border-radius:999px',
+      'font:600 13px/1.3 system-ui,-apple-system,sans-serif',
+      'color:#fff',
+      'white-space:nowrap',
+      'overflow:hidden',
+      'text-overflow:ellipsis',
       'box-shadow:0 2px 10px rgba(0,0,0,.25)'
     ].join(';');
     host.attachShadow({ mode: 'closed' }).appendChild(pill);
     document.documentElement.appendChild(host);
   }
-  const label = focus.phase === 'break' ? 'Break' : focus.phase === 'paused' ? 'Paused' : focus.task;
+  const label =
+    focus.phase === 'break' ? 'Break' : focus.phase === 'paused' ? 'Paused' : focus.task;
   pill.textContent = `${label} · ${clock(left(focus))}`;
-  pill.style.background = focus.phase === 'break' ? '#2f7d4f' : focus.phase === 'paused' ? '#6a6a66' : '#b4441f';
+  pill.style.background =
+    focus.phase === 'break' ? '#2f7d4f' : focus.phase === 'paused' ? '#6a6a66' : '#b4441f';
 }
 
 const autoplayToggle = (on: boolean): HTMLElement | null =>
@@ -98,7 +106,11 @@ function youtube(): void {
   const on = autoplayToggle(true);
   if (on) {
     on.click();
-    try { localStorage.setItem(AUTOPLAY_FLAG, '1'); } catch { /* storage unavailable */ }
+    try {
+      localStorage.setItem(AUTOPLAY_FLAG, '1');
+    } catch {
+      /* storage unavailable */
+    }
   }
 
   // The session's audio tab loops (but not an advert), and follows pause and resume.

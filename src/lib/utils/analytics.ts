@@ -9,20 +9,20 @@ export interface UsageDay {
   key: string;
   date: Date;
   values: Record<string, number>; // seconds per series
-  total: number;                  // seconds, from the same count the daily limit uses
+  total: number; // seconds, from the same count the daily limit uses
 }
 
 export interface UsageData {
   days: UsageDay[];
-  series: string[];  // sites with their own series, most used first, then OTHER and UNSPLIT if present
+  series: string[]; // sites with their own series, most used first, then OTHER and UNSPLIT if present
   firstData: number; // index of the first day with any time recorded, or -1
 }
 
 export interface WeekAverage {
-  first: Date;                    // the week's Monday
-  n: number;                      // days averaged over
+  first: Date; // the week's Monday
+  n: number; // days averaged over
   values: Record<string, number>; // average seconds per day, per series
-  total: number;                  // average seconds per day
+  total: number; // average seconds per day
 }
 
 export function addDays(d: Date, n: number): Date {
@@ -61,10 +61,13 @@ export function buildUsage(
   const sums: Record<string, number> = {};
   for (let d = start; d <= today; d = addDays(d, 1)) {
     const key = dayKey(d);
-    for (const [site, secs] of Object.entries(sites[key] || {})) sums[site] = (sums[site] || 0) + secs;
+    for (const [site, secs] of Object.entries(sites[key] || {}))
+      sums[site] = (sums[site] || 0) + secs;
     days.push({ key, date: d, values: {}, total: 0 });
   }
-  const named = Object.keys(sums).sort((a, b) => sums[b] - sums[a] || a.localeCompare(b)).slice(0, slots);
+  const named = Object.keys(sums)
+    .sort((a, b) => sums[b] - sums[a] || a.localeCompare(b))
+    .slice(0, slots);
 
   for (const day of days) {
     let split = 0;

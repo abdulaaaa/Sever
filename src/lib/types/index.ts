@@ -1,7 +1,7 @@
 // Schedule for time-based blocks
 export interface Schedule {
-  start: string;  // "HH:MM" format
-  end: string;    // "HH:MM" format
+  start: string; // "HH:MM" format
+  end: string; // "HH:MM" format
   days: number[]; // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
 }
 
@@ -22,9 +22,9 @@ export interface Block {
 export interface Settings {
   daily_limit_minutes: number;
   budget_sites: string[];
-  settings_unlock_schedule?: Schedule | null;  // When settings CAN be changed (null = always unlocked)
-  person_terms?: Record<string, string[]>;     // Extra names/usernames to watch for, by person
-  focus_config?: Partial<FocusConfig>;         // Lock-in mode settings
+  settings_unlock_schedule?: Schedule | null; // When settings CAN be changed (null = always unlocked)
+  person_terms?: Record<string, string[]>; // Extra names/usernames to watch for, by person
+  focus_config?: Partial<FocusConfig>; // Lock-in mode settings
 }
 
 // Supabase session
@@ -68,12 +68,12 @@ export interface ExtensionState {
 // device; its settings and history are synced.
 export interface FocusState {
   task: string;
-  totalMs: number;       // planned length
+  totalMs: number; // planned length
   phase: 'focus' | 'paused' | 'break';
-  endsAt: number;        // when the focus or break ends (ms); not used while paused
-  remainingMs?: number;  // time left, while paused
+  endsAt: number; // when the focus or break ends (ms); not used while paused
+  remainingMs?: number; // time left, while paused
   pausedAt?: number;
-  sites?: string[];      // what was blocked when the session started; later removals don't unblock
+  sites?: string[]; // what was blocked when the session started; later removals don't unblock
 }
 
 // A finished session still waiting for its "how did it go?" answer
@@ -83,21 +83,21 @@ export interface FocusUnrated {
 }
 
 export interface FocusConfig {
-  minutes: number;       // default session length
+  minutes: number; // default session length
   breakMinutes: number;
-  video: string;         // YouTube link played during a session, or ""
-  sites: string[];       // blocked during a session, on top of the daily-limit sites
+  video: string; // YouTube link played during a session, or ""
+  sites: string[]; // blocked during a session, on top of the daily-limit sites
 }
 
 // One day of lock-in history
 export interface FocusDay {
-  seconds: number;       // time locked in
+  seconds: number; // time locked in
   sessions: number;
-  video: number;         // seconds on YouTube while locked in
+  video: number; // seconds on YouTube while locked in
   done: number;
   partly: number;
   pulled: number;
-  early: number;         // sessions ended before the timer
+  early: number; // sessions ended before the timer
 }
 
 export interface FocusLog {

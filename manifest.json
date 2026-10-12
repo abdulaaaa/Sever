@@ -12,9 +12,7 @@
     "notifications",
     "tabs"
   ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/background/background.ts",
     "type": "module"
@@ -49,12 +47,8 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": [
-        "src/pages/blocked/index.html"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "resources": ["src/pages/blocked/index.html"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

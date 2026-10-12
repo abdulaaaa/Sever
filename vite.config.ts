@@ -4,10 +4,7 @@ import { crx } from '@crxjs/vite-plugin';
 import manifest from './manifest.json';
 
 export default defineConfig({
-  plugins: [
-    svelte(),
-    crx({ manifest })
-  ],
+  plugins: [svelte(), crx({ manifest })],
   build: {
     rollupOptions: {
       input: {

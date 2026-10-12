@@ -10,9 +10,18 @@ npm install          # Install dependencies
 npm run dev          # Start development server with HMR
 npm run build        # Build extension for production
 npm run check        # Run TypeScript type checking
+npm test             # Run unit tests (Vitest)
+npm run test:watch   # Re-run tests on change
+npm run lint         # Run ESLint
+npm run format       # Format with Prettier
+npm run format:check # Check formatting without writing
 ```
 
 After building, load the `dist` folder in Chrome at `chrome://extensions/`.
+
+Tests live next to the code as `*.test.ts` and use stub config from
+`vitest.config.ts`, never the real `.env`. CI (`.github/workflows/ci.yml`) runs
+check, lint, format:check, test and build on pushes to `main` and on pull requests.
 
 ## Structure
 
