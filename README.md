@@ -44,6 +44,7 @@ CREATE TABLE settings (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   daily_limit_minutes INTEGER NOT NULL DEFAULT 60,
   budget_sites TEXT[] NOT NULL DEFAULT '{}',
+  person_terms JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -112,6 +113,12 @@ CREATE POLICY "Users can manage their own usage"
 
 CREATE POLICY "Users can manage their own attempts"
   ON attempts FOR ALL USING (auth.uid() = user_id);
+```
+
+**Extra watch terms (for blocking searches).** If your database was set up before search blocking existed, run this once:
+
+```sql
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS person_terms JSONB NOT NULL DEFAULT '{}';
 ```
 
 **Per-site usage (for the Analytics page).** If your database was set up before the Analytics page existed, run just this block:
@@ -263,6 +270,17 @@ Set up the session (using the console script) on each Chrome profile/device. Set
 ### Analytics
 
 Click **Analytics** in the popup to see how much time you spend on each daily-limit site per day, and the average per day for each week (Monday to Sunday). Per-site numbers start from the day you install this version; earlier days only show a combined total.
+
+### Blocking searches for people
+
+For everyone under **People**, looking them up is blocked as well as their pages:
+
+- **Searches**: on Google, Bing, DuckDuckGo, YouTube and the search pages of social sites, a search for their full name or a username from their blocked links goes to the blocked page and is counted.
+- **Lookalikes**: different capitalisation, dots, underscores, trailing numbers, letter swaps like `j4ne`, and one or two typos still match. A profile whose username resembles theirs is blocked too.
+- **Typing**: on search engines and social sites, typing a match into a text box clears it and blocks the page. Text is compared inside the page and never stored or sent.
+- **Extra terms**: add nicknames or other usernames per person in Settings. Removing them follows the settings lock.
+
+A first name on its own is never matched. This only covers this browser; allow the extension in incognito from `chrome://extensions/` to cover incognito windows.
 
 ### Settings Lock
 

@@ -1,6 +1,7 @@
 // Matching, schedules and other shared helpers.
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS } from './defaults';
 import { DEV_MODE } from './config';
+import { watchTokens, watchSquash, watchMatch, type WatchTerm } from './watch';
 import type {
   Block,
   Schedule,
@@ -204,6 +205,89 @@ export function isBudgetSite(url: string, settings: Settings): boolean {
   return budgetSiteFor(url, settings) !== null;
 }
 
+// ---------- people watch ----------
+const PROFILE_PREFIXES = new Set(["in", "u", "user", "users", "people", "profile", "profiles", "channel", "c", "pub"]);
+const SEARCH_PARAMS = ["q", "query", "search_query", "keywords", "keyword", "k", "p", "text", "search", "s", "term", "wd"];
+const SEARCH_HOSTS = [
+  "bing.com", "duckduckgo.com", "yahoo.com", "brave.com", "ecosia.org",
+  "startpage.com", "youtube.com", "kagi.com", "yandex.com", "baidu.com"
+];
+
+type WatchState = Pick<ExtensionState, "blocks" | "settings">;
+
+// "/in/jane-doe/details" -> "jane-doe"
+function profileName(path: string): string {
+  const segs = path.split("/").filter(Boolean);
+  return (PROFILE_PREFIXES.has(segs[0]) ? segs[1] : segs[0]) || "";
+}
+
+// Everything that counts as looking a blocked person up: their full name,
+// the usernames in their blocked links, and any extra terms from settings.
+// A first name on its own is never a term.
+export function watchTerms(st: WatchState): WatchTerm[] {
+  const out: WatchTerm[] = [];
+  const seen = new Set<string>();
+  const add = (b: Block, raw: string, min: number): void => {
+    const term = watchSquash(raw);
+    if (term.length < min || seen.has(term)) return;
+    seen.add(term);
+    out.push({ person: b.person!, id: b.id, term });
+  };
+
+  for (const b of st.blocks) {
+    if (!b.person || b.kind === "allow") continue;
+    const words = watchTokens(b.person);
+    if (words.length > 1) {
+      add(b, words.join(" "), 5);
+      add(b, [...words].reverse().join(" "), 5);
+      add(b, words[0] + words[words.length - 1], 5);
+      add(b, words[words.length - 1] + words[0], 5);
+    }
+    const i = b.target.indexOf("/");
+    if (i > 0) add(b, profileName(b.target.slice(i)), 4);
+    for (const extra of st.settings.person_terms?.[b.person] || []) add(b, extra, 3);
+  }
+  return out;
+}
+
+// Sites where profile addresses and typing are checked: the daily-limit
+// sites and any site a blocked person's page is on.
+function watchHosts(st: WatchState): string[] {
+  const hosts = st.blocks.filter((b) => b.person).map((b) => b.target.split("/")[0]);
+  return [...new Set([...st.settings.budget_sites.map(normHost), ...hosts])];
+}
+
+// Should typing be checked on this page? Search engines and social sites only.
+export function isWatchScope(url: string, st: WatchState): boolean {
+  const n = normalize(url);
+  if (!n) return false;
+  const host = n.slice(0, n.indexOf("/"));
+  if (/(^|\.)google\.[a-z.]+$/.test(host)) return true;
+  return [...SEARCH_HOSTS, ...watchHosts(st)].some((h) => host === h || host.endsWith("." + h));
+}
+
+// Is this address a search for a blocked person, or a profile that resembles one?
+export function watchUrl(url: string, st: WatchState): WatchTerm | null {
+  const terms = watchTerms(st);
+  if (!terms.length) return null;
+  try {
+    const u = new URL(url);
+    for (const p of SEARCH_PARAMS) {
+      const hit = watchMatch(u.searchParams.get(p) || "", terms);
+      if (hit) return hit;
+    }
+    if (watchHosts(st).some((h) => matches(url, h))) {
+      for (const seg of decodeURIComponent(u.pathname).split("/")) {
+        const hit = watchMatch(seg, terms);
+        if (hit) return hit;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 // What should happen to this address right now?
 // Returns null (allowed), { id } for a block, or { budget: true }.
 export function decide(url: string, st: ExtensionState, date: Date = new Date()): DecisionResult | null {
@@ -216,6 +300,8 @@ export function decide(url: string, st: ExtensionState, date: Date = new Date())
   for (const b of blocks) {
     if (b.kind !== "allow" && b.schedule && schedActive(b.schedule, date) && matches(url, b.target)) return { id: b.id };
   }
+  const hit = watchUrl(url, st);
+  if (hit) return { id: hit.id, watch: true };
   if (out && isBudgetSite(url, settings)) return { budget: true };
   return null;
 }

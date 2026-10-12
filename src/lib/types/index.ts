@@ -23,6 +23,7 @@ export interface Settings {
   daily_limit_minutes: number;
   budget_sites: string[];
   settings_unlock_schedule?: Schedule | null;  // When settings CAN be changed (null = always unlocked)
+  person_terms?: Record<string, string[]>;     // Extra names/usernames to watch for, by person
 }
 
 // Supabase session
@@ -93,6 +94,7 @@ export interface UsageDayRow {
 export interface DecisionResult {
   id?: string;
   budget?: boolean;
+  watch?: boolean; // a search or lookalike profile for a blocked person
 }
 
 // Tracking state stored in session storage

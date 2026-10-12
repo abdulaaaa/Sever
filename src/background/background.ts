@@ -5,6 +5,8 @@ import {
   matches,
   isBudgetSite,
   budgetSiteFor,
+  watchTerms,
+  isWatchScope,
   domainsFor,
   pageRegex,
   isSiteTarget,
@@ -125,7 +127,8 @@ async function sync(): Promise<void> {
         settings: {
           daily_limit_minutes: s.daily_limit_minutes,
           budget_sites: s.budget_sites,
-          settings_unlock_schedule: s.settings_unlock_schedule || null
+          settings_unlock_schedule: s.settings_unlock_schedule || null,
+          person_terms: s.person_terms || {}
         },
         usage: { day, seconds: usageRows[0]?.seconds || 0 }
       },
@@ -196,7 +199,7 @@ async function applyRules(st: ExtensionState): Promise<void> {
 }
 
 const blockedUrl = (d: DecisionResult, extra: string = ""): string =>
-  chrome.runtime.getURL("src/pages/blocked/index.html?" + (d.budget ? "budget=1" : `id=${d.id}`) + extra);
+  chrome.runtime.getURL("src/pages/blocked/index.html?" + (d.budget ? "budget=1" : `id=${d.id}`) + (d.watch ? "&w=1" : "") + extra);
 
 // Send tabs that are already open to the blocked screen if they're now blocked.
 async function sweep(st: ExtensionState): Promise<void> {
@@ -409,6 +412,7 @@ chrome.webNavigation.onCommitted.addListener(check, WEB);
 // Messages from the settings page and popup.
 interface Message {
   type: string;
+  id?: string;
 }
 
 chrome.runtime.onMessage.addListener((
@@ -458,6 +462,26 @@ chrome.runtime.onMessage.addListener((
       reply({ tracking: !!tracking });
     });
     return true;
+  }
+
+  // From the typing check: which names to watch for on this page, if any.
+  if (msg?.type === "watchConfig") {
+    serial(async () => {
+      const st = await loadState();
+      const url = sender.tab?.url || "";
+      const allowed = st.blocks.some((b) => b.kind === "allow" && matches(url, b.target));
+      const active = !allowed && isWatchScope(url, st);
+      reply({ active, terms: active ? watchTerms(st) : [] });
+    });
+    return true;
+  }
+
+  // A blocked person's name was typed into a page.
+  if (msg?.type === "watchHit") {
+    if (sender.tab?.id && msg.id) {
+      chrome.tabs.update(sender.tab.id, { url: blockedUrl({ id: msg.id, watch: true }) }).catch(() => {});
+    }
+    return undefined;
   }
 
   if (msg?.type === "shouldShowCountdown") {

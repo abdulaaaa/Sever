@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { loadState, cleanTarget, scheduleLabel, schedActive, normHost, isSettingsLocked, nextUnlockTime, summarize } from '../../lib/utils/common';
-  import { loadAttempts, updateSettings, insertBlock, deleteBlock, updateBlock } from '../../lib/services/supa';
+  import { loadAttempts, updateSettings, insertBlock, deleteBlock, updateBlock, renameAttemptTarget } from '../../lib/services/supa';
+  import { watchSquash, searchTarget } from '../../lib/utils/watch';
   import type { ExtensionState, Block, Schedule, AttemptSummary } from '../../lib/types';
 
   let st: ExtensionState | null = $state(null);
@@ -102,11 +103,35 @@
     if (!newName || newName.trim() === '' || newName.trim() === oldName) return;
     const trimmed = newName.trim();
     const blocksToUpdate = st!.blocks.filter((b) => b.person === oldName);
+    const { [oldName]: moved, ...terms } = st!.settings.person_terms || {};
     run(async () => {
       for (const b of blocksToUpdate) {
         await updateBlock(b.id, { person: trimmed });
       }
+      if (moved) await saveSettings({ person_terms: { ...terms, [trimmed]: moved } });
+      await renameAttemptTarget(searchTarget(oldName), searchTarget(trimmed));
     }, `Renamed to "${trimmed}".`);
+  }
+
+  // Extra names and usernames that count as looking a person up.
+  function personTerms(name: string): string[] {
+    return st?.settings.person_terms?.[name] || [];
+  }
+
+  function addTerm(name: string): void {
+    const term = (prompt(`Another name or username for ${name} to block in searches:`) || '').trim();
+    if (!term) return;
+    if (watchSquash(term).length < 3) {
+      toast('Too short to match safely.');
+      return;
+    }
+    const all = st!.settings.person_terms || {};
+    run(() => saveSettings({ person_terms: { ...all, [name]: [...new Set([...(all[name] || []), term])] } }), 'Added.');
+  }
+
+  function removeTerm(name: string, term: string): void {
+    const all = st!.settings.person_terms || {};
+    run(() => saveSettings({ person_terms: { ...all, [name]: (all[name] || []).filter((t) => t !== term) } }), 'Removed.');
   }
 
   function saveSettings(patch: Record<string, unknown>): Promise<unknown> {
@@ -324,8 +349,12 @@
       const rows: typeof reportRows = [];
 
       for (const name of people) {
-        const entries = st!.blocks.filter((b) => b.person === name);
-        const allCounts = entries.map((b) => summarize(attempts[b.target]));
+        // Each of the person's links, then searches and lookalike profiles.
+        const entries = [
+          ...st!.blocks.filter((b) => b.person === name).map((b) => ({ label: b.target, target: b.target })),
+          { label: 'Searches and lookalike profiles', target: searchTarget(name) }
+        ];
+        const allCounts = entries.map((e) => summarize(attempts[e.target]));
         const sum = (k: keyof AttemptSummary): number =>
           allCounts.reduce((a, c) => a + c[k], 0);
 
@@ -340,7 +369,7 @@
           rows.push({
             isPerson: false,
             name: '',
-            target: entries[i].target,
+            target: entries[i].label,
             today: allCounts[i].today,
             total: allCounts[i].total
           });
@@ -477,6 +506,10 @@
     border-radius: 999px;
     padding: 2px 4px 2px 10px;
     font-size: 13px;
+  }
+  .terms {
+    align-items: center;
+    margin: 6px 0 4px;
   }
   .limit-row {
     display: flex;
@@ -651,7 +684,7 @@
     <!-- People Card -->
     <div class="card">
       <h2>People</h2>
-      <p class="muted">Always blocked. Every attempt to open these pages is counted.</p>
+      <p class="muted">Always blocked, and counted. Searching for their full name or usernames is blocked too, as are profiles that resemble them. A first name on its own is never matched.</p>
       <div>
         {#each personGroups as group}
           <div class="person-h">
@@ -666,6 +699,16 @@
               </li>
             {/each}
           </ul>
+          <div class="chips terms">
+            <span class="muted small">Also blocked in searches:</span>
+            {#each personTerms(group.name) as term}
+              <span class="chip">
+                {term}
+                <button type="button" class="link" title="Remove {term}" onclick={() => removeTerm(group.name, term)} disabled={isLocked}>&times;</button>
+              </span>
+            {/each}
+            <button type="button" class="link" onclick={() => addTerm(group.name)}>Add a name or username</button>
+          </div>
         {:else}
           <div class="empty">No people yet.</div>
         {/each}

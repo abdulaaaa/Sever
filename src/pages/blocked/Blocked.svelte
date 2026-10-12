@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { loadState, scheduleLabel, timeLabel, summarize } from '../../lib/utils/common';
   import { recordAttempt, loadAttempts } from '../../lib/services/supa';
+  import { searchTarget } from '../../lib/utils/watch';
   import type { Block, ExtensionState, AttemptSummary } from '../../lib/types';
 
   const params = new URLSearchParams(location.search);
@@ -46,18 +47,28 @@
     }
 
     label = block.person;
+    if (params.has('w')) {
+      // A search or lookalike profile: don't put their page on screen.
+      titleHighlight = '';
+      title = 'Looking them up is blocked';
+    }
     // Count this attempt once (not again if the page is refreshed, or if the tab was already open).
     const counting = !params.has('n') && !params.has('c');
     if (counting) {
       params.set('c', '1');
       history.replaceState(null, '', '?' + params.toString());
-      await recordAttempt(block.target);
+      await recordAttempt(params.has('w') ? searchTarget(block.person) : block.target);
     }
-    const times = (await loadAttempts(block.target))[block.target] || [];
-    const c = summarize(times);
+    // A blocked link shows its own count. A search is counted against the
+    // person, so show their total: every link plus searches.
+    const targets = params.has('w')
+      ? [...st.blocks.filter((b) => b.person === block.person).map((b) => b.target), searchTarget(block.person)]
+      : [block.target];
+    const attempts = await loadAttempts(targets.length === 1 ? targets[0] : undefined);
+    const c = summarize(targets.flatMap((t) => attempts[t] || []));
     sub = params.has('n')
       ? "This tab was already open when the block started, so it wasn't counted."
-      : `You've tried to open this ${c.total} time${c.total === 1 ? '' : 's'}.`;
+      : `You've tried ${c.total} time${c.total === 1 ? '' : 's'}.`;
     counts = c;
     showCounts = true;
   }

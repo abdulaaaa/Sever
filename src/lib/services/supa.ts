@@ -173,8 +173,7 @@ export async function fetchSiteUsageSince(fromDay: string): Promise<SiteUsageRow
       .from('site_usage')
       .select('day, site, seconds')
       .gte('day', fromDay)
-      .order('day', { ascending: true })
-      .limit(5000);
+      .order('day', { ascending: false }); // newest first, so a row cap can only drop the oldest days
 
     if (error) throw new Error(`Database error: ${error.message}`);
     return data || [];
@@ -215,6 +214,20 @@ export async function recordAttempt(target: string): Promise<void> {
   }
 }
 
+// Move attempts saved under one name to another, e.g. when a person is renamed.
+export async function renameAttemptTarget(from: string, to: string): Promise<void> {
+  const { pendingAttempts = [] } = await chrome.storage.local.get("pendingAttempts") as { pendingAttempts?: AttemptRecord[] };
+  if (pendingAttempts.some((r) => r.target === from)) {
+    await chrome.storage.local.set({
+      pendingAttempts: pendingAttempts.map((r) => (r.target === from ? { ...r, target: to } : r))
+    });
+  }
+  return withAuth(async () => {
+    const { error } = await supabase.from('attempts').update({ target: to }).eq('target', from);
+    if (error) throw new Error(`Database error: ${error.message}`);
+  });
+}
+
 interface AttemptRow {
   target: string;
   at: string;
@@ -229,23 +242,33 @@ export async function loadAttempts(target?: string): Promise<AttemptsMap> {
   let server: AttemptRow[] | null = null;
   try {
     server = await withAuth(async () => {
-      let query = supabase
-        .from('attempts')
-        .select('target, at')
-        .order('at', { ascending: true });
+      // Fetch every row, 1000 at a time: the database caps what one request
+      // returns, and a capped count would silently stop going up.
+      const rows: AttemptRow[] = [];
+      for (let from = 0; ; from += 1000) {
+        let query = supabase
+          .from('attempts')
+          .select('target, at')
+          .order('at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + 999);
 
-      if (target) {
-        query = query.eq('target', target);
+        if (target) {
+          query = query.eq('target', target);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        rows.push(...(data || []));
+        if (!data || data.length < 1000) break;
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-
-      if (!target && data) {
-        await chrome.storage.local.set({ attemptsCache: data });
+      if (!target) {
+        await chrome.storage.local.set({ attemptsCache: rows });
       }
 
-      return data || [];
+      return rows;
     });
   } catch {
     const { attemptsCache } = await chrome.storage.local.get("attemptsCache") as { attemptsCache?: AttemptRow[] };

@@ -2,23 +2,15 @@
   import { onMount } from 'svelte';
   import { dayKey } from '../../lib/utils/common';
   import { fetchSiteUsageSince, fetchUsageSince } from '../../lib/services/supa';
+  import { addDays, buildUsage, weekAverage, OTHER, UNSPLIT, type UsageData, type UsageDay } from '../../lib/utils/analytics';
   import type { PendingUsage, PendingSiteUsage, SiteUsageRow, UsageDayRow } from '../../lib/types';
 
   const WEEKS = 12;             // how far back to load
   const SLOTS = 7;              // sites that get their own colour; the rest fold into "Other sites"
-  const OTHER = 'Other sites';
-  const UNSPLIT = 'Not broken down'; // time recorded before per-site tracking existed
   const PLOT_H = 220;
 
   interface Series { key: string; color: string; }
-  interface Day { key: string; date: Date; values: Record<string, number>; total: number; }
   interface Row { label: string; note: string; values: Record<string, number>; total: number; }
-
-  const addDays = (d: Date, n: number): Date => {
-    const x = new Date(d);
-    x.setDate(x.getDate() + n);
-    return x;
-  };
 
   // Weeks run Monday to Sunday.
   const today = new Date();
@@ -29,9 +21,7 @@
   let loading = $state(true);
   let error = $state('');
   let siteError = $state(false);
-  let days: Day[] = $state([]);
-  let series: Series[] = $state([]);
-  let firstData = $state(-1); // index of the first day with any time recorded
+  let data: UsageData = $state.raw({ days: [], series: [], firstData: -1 });
   let range = $state(4);      // weeks shown in the chart
   let hover: number | null = $state(null);
 
@@ -59,69 +49,36 @@
     ]);
     siteError = siteRows === null && !error;
 
-    // Server rows plus whatever hasn't been synced yet.
-    const sites: Record<string, Record<string, number>> = {};
-    const addSite = (day: string, site: string, secs: number): void => {
-      const m = (sites[day] ||= {});
-      m[site] = (m[site] || 0) + secs;
-    };
-    for (const r of siteRows || []) addSite(r.day, r.site, r.seconds);
-    for (const [day, m] of Object.entries(local.pendingSiteUsage || {})) {
-      for (const [site, secs] of Object.entries(m)) addSite(day, site, secs);
-    }
-
-    const totals: Record<string, number> = {};
-    for (const r of totalRows) totals[r.day] = r.seconds;
-    for (const [day, secs] of Object.entries(local.pendingUsage || {})) totals[day] = (totals[day] || 0) + secs;
-
-    // Colour follows the site: rank once over everything loaded, not per view.
-    const sums: Record<string, number> = {};
-    for (const m of Object.values(sites)) {
-      for (const [site, secs] of Object.entries(m)) sums[site] = (sums[site] || 0) + secs;
-    }
-    const named = Object.keys(sums).sort((a, b) => sums[b] - sums[a]).slice(0, SLOTS);
-
-    const out: Day[] = [];
-    for (let d = start; d <= today; d = addDays(d, 1)) {
-      const key = dayKey(d);
-      const values: Record<string, number> = {};
-      let split = 0;
-      for (const [site, secs] of Object.entries(sites[key] || {})) {
-        const k = named.includes(site) ? site : OTHER;
-        values[k] = (values[k] || 0) + secs;
-        split += secs;
-      }
-      const gap = (totals[key] || 0) - split;
-      if (gap >= 60) values[UNSPLIT] = gap;
-      out.push({ key, date: d, values, total: Object.values(values).reduce((a, b) => a + b, 0) });
-    }
-
-    const list: Series[] = named.map((key, i) => ({ key, color: `var(--s${i + 1})` }));
-    if (out.some((d) => d.values[OTHER])) list.push({ key: OTHER, color: 'var(--s-other)' });
-    if (out.some((d) => d.values[UNSPLIT])) list.push({ key: UNSPLIT, color: 'var(--s-unsplit)' });
-
-    days = out;
-    series = list;
-    firstData = out.findIndex((d) => d.total > 0);
+    data = buildUsage(
+      start, today,
+      siteRows || [], totalRows,
+      local.pendingSiteUsage || {}, local.pendingUsage || {},
+      SLOTS
+    );
     loading = false;
   }
 
-  // Average per day for week w (0 = oldest loaded). Days before tracking began don't count.
+  const days: UsageDay[] = $derived(data.days);
+  const firstData = $derived(data.firstData);
+
+  // Colour follows the site: ranked once over everything loaded, not per view.
+  const series: Series[] = $derived(data.series.map((key, i) => ({
+    key,
+    color: key === OTHER ? 'var(--s-other)' : key === UNSPLIT ? 'var(--s-unsplit)' : `var(--s${i + 1})`
+  })));
+
   function weekRow(w: number): Row | null {
-    const slice = days.slice(w * 7, w * 7 + 7).filter((_, i) => w * 7 + i >= firstData);
-    if (firstData < 0 || !slice.length) return null;
-    const n = slice.length;
-    const values: Record<string, number> = {};
-    for (const s of series) values[s.key] = slice.reduce((a, d) => a + (d.values[s.key] || 0), 0) / n;
-    const first = days[w * 7].date;
+    const avg = weekAverage(data, w);
+    if (!avg) return null;
+    const { n } = avg;
     const note = w === WEEKS - 1
       ? `so far, ${n} day${n === 1 ? '' : 's'}`
       : n < 7 ? `${n} day${n === 1 ? '' : 's'} tracked` : '';
     return {
-      label: `${dateFmt(first)} – ${dateFmt(addDays(first, 6))}`,
+      label: `${dateFmt(avg.first)} – ${dateFmt(addDays(avg.first, 6))}`,
       note,
-      values,
-      total: slice.reduce((a, d) => a + d.total, 0) / n
+      values: avg.values,
+      total: avg.total
     };
   }
 
