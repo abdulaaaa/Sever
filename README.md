@@ -28,7 +28,7 @@ The extension includes:
 
 - Google Chrome or Chromium-based browser (Brave, Edge, etc.)
 - A Supabase account (free tier works perfectly)
-- Node.js installed on your machine
+- Node.js 22 (the version in `.nvmrc`, also used by CI)
 
 ### Step 1: Set up Supabase
 
@@ -221,7 +221,7 @@ CREATE POLICY "Users can manage their own site usage"
    Edit `.env` and add your Supabase credentials:
    ```env
    VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your_anon_public_key_here
+   VITE_SUPABASE_KEY=your_anon_public_key_here
    ```
 
 4. **Build the extension**
@@ -248,7 +248,7 @@ Since this is a single-user extension with no login UI, you'll need to set up yo
 const email = 'your@email.com';
 const password = 'your_password';
 const supabaseUrl = 'https://your-project.supabase.co';  // Same as VITE_SUPABASE_URL
-const supabaseKey = 'your_anon_key';  // Same as VITE_SUPABASE_ANON_KEY
+const supabaseKey = 'your_anon_key';  // Same as VITE_SUPABASE_KEY
 
 fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
   method: 'POST',
@@ -363,6 +363,9 @@ Lock your settings outside of a scheduled time window to prevent yourself from d
 - **Vite 5.4** - Fast build tool
 - **@supabase/supabase-js** - Official Supabase SDK for database operations
 - **@crxjs/vite-plugin** - Chrome extension bundler
+- **Vitest** - Unit tests
+- **ESLint and Prettier** - Linting and formatting
+- **GitHub Actions** - Runs all checks on pushes to `main` and on pull requests
 
 ### Project Structure
 
@@ -373,6 +376,7 @@ sever/
 │   ├── pages/
 │   │   ├── popup/          # Extension popup UI
 │   │   ├── options/        # Settings page UI
+│   │   ├── analytics/      # Usage analytics page
 │   │   └── blocked/        # Blocked page display
 │   ├── content/            # Content scripts (countdown timer)
 │   ├── lib/
@@ -380,6 +384,7 @@ sever/
 │   │   ├── types/          # TypeScript interfaces
 │   │   └── utils/          # Core logic (matching, scheduling)
 │   └── assets/             # Icons
+├── .github/workflows/      # CI workflow
 ├── dist/                   # Build output (load in Chrome)
 └── .env                    # Your credentials (gitignored)
 ```
@@ -398,10 +403,14 @@ sever/
    npm run build
    ```
 
-3. **Type Checking**:
+3. **Checks** (CI runs all of these):
    ```bash
-   npm run check
+   npm run check          # Type checking
+   npm run lint           # ESLint
+   npm run format:check   # Prettier, without writing (npm run format to fix)
+   npm test               # Unit tests (npm run test:watch to re-run on change)
    ```
+   Tests live next to the code as `*.test.ts` and use stub configuration, never your `.env`.
 
 4. **Reload extension in Chrome**:
    - Go to `chrome://extensions/`
@@ -444,8 +453,8 @@ sever/
 
 **Build fails**
 - Ensure `.env` file exists with valid credentials
-- Check that Node.js 18+ is installed: `node --version`
-- Make sure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set
+- Check that Node.js 22 is installed: `node --version`
+- Make sure `VITE_SUPABASE_URL` and `VITE_SUPABASE_KEY` are set
 - Run `npm install` to ensure dependencies are installed
 
 **Session expired / "signed-out" errors**
