@@ -42,7 +42,11 @@
       const mins = st.settings.daily_limit_minutes;
       label = 'Daily limit';
       title = "Today's social media time is used up";
-      sub = `You've used ${Math.floor(st.used / 60)} of your ${mins} minutes. The time resets at midnight.`;
+      const kept = Math.ceil((st.held - st.phone) / 60);
+      sub =
+        `You've used ${Math.floor((st.web + st.phone) / 60)} of your ${mins} minutes` +
+        (kept > 0 ? `, and ${kept} more are kept for the phone` : '') +
+        '. The time resets at midnight.';
       showBar = true;
       note = 'Other websites still work.';
       return;

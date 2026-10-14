@@ -7,6 +7,7 @@
   let showNotice = $state(false);
   let timeLeft = $state('-');
   let usedText = $state('');
+  let phoneText = $state('');
   let fillPercent = $state(0);
   let barClass = $state('bar');
   let activeBlocks: Array<{ text: string }> = $state([]);
@@ -151,7 +152,13 @@
 
     localRemaining = Math.max(0, st.limit - st.used);
     timeLeft = formatTimeRemaining(localRemaining);
-    usedText = `${Math.floor(st.used / 60)} of ${st.settings.daily_limit_minutes} min used`;
+    usedText = `${Math.floor((st.web + st.phone) / 60)} of ${st.settings.daily_limit_minutes} min used`;
+    const kept = Math.ceil((st.held - st.phone) / 60);
+    phoneText =
+      kept > 0
+        ? `${kept} min kept for the phone` +
+          (st.phone >= 60 ? ` (${Math.floor(st.phone / 60)} min used there)` : '')
+        : '';
 
     const pct = Math.min(100, (st.used / st.limit) * 100);
     fillPercent = pct;
@@ -294,6 +301,9 @@
     <div class={barClass}>
       <i style="width: {fillPercent}%"></i>
     </div>
+    {#if phoneText}
+      <span class="muted small">{phoneText}</span>
+    {/if}
   </div>
 
   <div class="card">
