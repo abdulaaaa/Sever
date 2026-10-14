@@ -1,57 +1,161 @@
-# Sever Chrome Extension
+# Sever
 
-A personal Chrome extension for managing internet usage and reducing distractions. Features website blocking, customizable schedules, daily time limits, and accountability tracking.
+A personal Chrome extension that blocks distracting websites, limits daily social media time and shows where the time goes. It is built for one person: everything is stored in your own Supabase project and syncs between your Chrome profiles and devices.
 
-**Note**: This is a single-user personal productivity tool. It syncs across your Chrome profiles via your private Supabase database.
+## Contents
+
+- [Features](#features)
+- [How it works](#how-it-works)
+  - [Blocking rules](#blocking-rules)
+  - [Daily limit](#daily-limit)
+  - [iPhone apps](#iphone-apps)
+  - [People](#people)
+  - [Lock-in mode](#lock-in-mode)
+  - [Analytics](#analytics)
+  - [Settings lock](#settings-lock)
+  - [Sync and offline use](#sync-and-offline-use)
+- [Setup](#setup)
+- [iPhone setup (optional)](#iphone-setup-optional)
+- [Upgrading an existing install](#upgrading-an-existing-install)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
 ## Features
 
-- **Website Blocking**: Block entire sites or specific pages
-- **Scheduled Blocks**: Apply time-based blocking rules (e.g., block social media from 9pm to noon)
-- **Daily Time Limits**: Track and limit time spent on social media with a configurable daily minute allowance
-- **Person Tracking**: Monitor attempts to visit specific profiles for accountability
-- **Allow Rules**: Whitelist specific pages even during blocked periods
-- **Multi-Profile Sync**: Sync settings across Chrome profiles via Supabase
-- **Offline Support**: Works offline, syncs when connection returns
-- **Privacy First**: All data stored in YOUR private Supabase database
+- **Blocking rules**: block whole sites or single pages, always or on a schedule, with allow rules for exceptions.
+- **Daily limit**: 80 minutes a day for social media by default, shared between websites and the Instagram and LinkedIn iPhone apps.
+- **People**: block someone's profiles and searches for them, and count every attempt.
+- **Lock-in mode**: a focus timer that blocks more, trims YouTube down and plays background audio.
+- **Analytics**: time per site per day and weekly averages, including iPhone app time and lock-in sessions.
+- **Settings lock**: settings can only be changed during a time window you choose.
+- **Sync**: one private Supabase database for every Chrome profile and device. Blocking keeps working offline.
 
-## Screenshots
+## How it works
 
-The extension includes:
-- Browser popup showing daily social media usage and statistics
-- Comprehensive settings page for managing all blocking rules
-- Blocked page display with clear information about why content was blocked
+### Blocking rules
 
-## Installation
+All rules are managed on the Settings page (open the popup, then **Settings**).
 
-### Prerequisites
+| Rule | What it does | Example |
+|---|---|---|
+| **Always blocked** | Blocks a page or a whole site at all times | `reddit.com/settings/profile` |
+| **Scheduled** | Blocks a page or site during a time window on chosen days | `x.com` from 21:00 to 12:00 every day |
+| **Always allowed** | Lets a page through, overriding every other rule | `linkedin.com/jobs` |
 
-- Google Chrome or Chromium-based browser (Brave, Edge, etc.)
-- A Supabase account (free tier works perfectly)
-- Node.js 22 (the version in `.nvmrc`, also used by CI)
+For each URL you choose **This page** or **Whole site**. Matching ignores `www.`, `m.` and similar subdomains, and treats `twitter.com` as `x.com`.
 
-### Step 1: Set up Supabase
+A new install starts with night-time blocks (21:00 to 12:00) on X, LinkedIn, Instagram, Facebook and Reddit, a couple of settings pages blocked, and LinkedIn Jobs allowed. These are copied into your database the first time you sign in and can be changed from then on.
 
-1. Create a free account at [supabase.com](https://supabase.com)
-2. Create a new project
-3. Go to **Project Settings → API**
-4. Copy your **Project URL** and **anon public key**
-5. Go to **SQL Editor** and run the following database schema:
+### Daily limit
+
+Time on the daily-limit sites (X, Reddit, Instagram, Facebook, LinkedIn, TikTok, Threads, Snapchat, Pinterest and Tumblr by default) counts against one daily allowance. You can change both the sites and the minutes in Settings.
+
+- Time counts only while the tab is the active tab in the focused window.
+- Pages on a limit site show a countdown, and the toolbar badge shows the website minutes left.
+- When the limit is used up, every limit site is blocked until midnight.
+
+The default limit is **80 minutes**, split like this:
+
+| Part | Minutes |
+|---|---|
+| Websites | 60 |
+| Instagram on the iPhone | 15 |
+| LinkedIn on the iPhone | 5 |
+
+The 20 phone minutes are always held back from website time, whether you use them or not. Websites are blocked after 60 minutes and the day can never go over 80. Unused phone time is not passed on to websites. If a phone app goes over its allowance (for example ScreenZen is overridden), every extra minute comes off website time.
+
+The popup and the Settings page show the time left out of the full 80 minutes, and say how much of it is kept for the phone. The blocked page says how much was used and how much is kept for the phone.
+
+The phone allowances are `PHONE_LIMITS` in `src/lib/utils/config.ts`. Sever doesn't block the apps on the phone itself; keep these values equal to your ScreenZen limits by hand, and rebuild after changing them. Without the [iPhone setup](#iphone-setup-optional), the 20 minutes are still held back, so either set the limit to 60 or lower `PHONE_LIMITS`.
+
+### iPhone apps
+
+iOS Shortcuts automations report when an app is opened and closed, and the database turns each open and close pair into seconds.
+
+| App | Counts against the limit | Shown on Analytics as |
+|---|---|---|
+| Instagram | Yes, with a 15-minute allowance | Instagram (phone) |
+| LinkedIn | Yes, with a 5-minute allowance | LinkedIn (phone) |
+| YouTube | No, tracked only | YouTube (phone) |
+| WhatsApp | No, tracked only | WhatsApp (phone) |
+
+- Phone time reaches the laptop within about a minute of the app being closed.
+- One session adds at most 2 hours, so a missed close can't add a whole day. If an app is opened again before its close arrived, the earlier open counts as nothing.
+- A session counts on the day it started, by the phone's local date, even if it runs past midnight.
+- Requests made while the phone is offline are lost, so that session isn't counted.
+
+See [iPhone setup](#iphone-setup-optional) to turn this on.
+
+### People
+
+Add someone under **People** with a name and their profile URLs. Then:
+
+- **Their pages** are blocked, and every attempt is counted and shown in the popup (today, this week and in total).
+- **Searches** for their full name or a username from their links are blocked on Google, Bing, DuckDuckGo, YouTube and the search pages of social sites.
+- **Lookalikes** still match: different capitalisation, dots, underscores, trailing numbers, letter swaps like `j4ne`, and one or two typos. A profile whose username resembles theirs is blocked too.
+- **Typing** a match into a text box on a search engine or social site clears it and blocks the page. Text is compared inside the page and never stored or sent.
+- **Extra terms**: add nicknames or other usernames per person. Removing them follows the settings lock.
+
+A first name on its own is never matched. This only covers this browser; allow the extension in incognito from `chrome://extensions/` to cover incognito windows.
+
+### Lock-in mode
+
+Start a focus session from the popup: type what you're working on, set the length (60 minutes by default) and click **Lock in**.
+
+- **Blocked for the session**: your daily-limit sites, plus a separate lock-in list you set in Settings.
+- **YouTube**: search and watching stay open. The home feed, Shorts, the side menu, suggestions and comments are removed, autoplay is switched off, and time there doesn't count against the daily limit while the timer runs.
+- **Audio**: a YouTube video of your choice plays on a loop in a pinned tab. If Chrome won't start the sound by itself, press play once in that tab.
+- **Pause**: stops the timer and the audio; the blocks stay on. After 10 minutes paused you get a reminder.
+- **Ending early**: type a sentence and wait 30 seconds.
+- **Afterwards**: a break timer (10 minutes by default; sites stay blocked during it), then you rate how the session went.
+
+Lock-in settings and history sync like everything else. A running session belongs to the Chrome profile it was started in.
+
+### Analytics
+
+Click **Analytics** in the popup to see time per daily-limit site per day, and the average per day for each week (Monday to Sunday).
+
+- **Phone columns**: Instagram (phone) and LinkedIn (phone) are limit time and rank like any other limit site.
+- **Tracked-only time**: YouTube and WhatsApp Web, and the YouTube and WhatsApp iPhone apps, are recorded but never count against the limit. They keep being recorded after the limit is used up. The tiles show **Limit sites** and **With YouTube + WhatsApp** side by side, and a switch adds them to the chart and tables.
+- **YouTube in the browser** keeps counting while a video plays with sound and you aren't touching the mouse or keyboard. It stops when the video is paused or muted, or the screen locks. YouTube during a lock-in session isn't counted here; it shows in the lock-in table as "On YouTube".
+- **Lock-in sessions** are listed with their length and how each one went.
+
+If you add YouTube or WhatsApp to your daily-limit sites, it counts against the limit from then on. Time recorded before the change stays where it was, so nothing is counted twice.
+
+### Settings lock
+
+Set an unlock schedule in Settings and everything else can only be changed inside that window, so you can't switch blocks off in a weak moment. With no schedule, settings are always unlocked.
+
+### Sync and offline use
+
+Every Chrome profile or device you sign in on uses the same blocks, settings and daily limit. Changes reach the others within about a minute. Without a connection the last synced rules keep applying, and time used offline is uploaded when the connection returns.
+
+## Setup
+
+You need Chrome (or Brave, Edge or another Chromium browser), a free [Supabase](https://supabase.com) account and Node.js 22 (the version in `.nvmrc`).
+
+### 1. Create the database
+
+1. Create a Supabase project.
+2. In **Project Settings → API**, copy the **Project URL** and the **anon public key**.
+3. In **SQL Editor**, run this block. It is safe to run again on an existing database: it only adds what is missing and replaces the functions.
 
 ```sql
--- Settings table
-CREATE TABLE settings (
+-- Settings, one row per user
+CREATE TABLE IF NOT EXISTS settings (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   daily_limit_minutes INTEGER NOT NULL DEFAULT 80,
   budget_sites TEXT[] NOT NULL DEFAULT '{}',
-  person_terms JSONB NOT NULL DEFAULT '{}',
-  focus_config JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS settings_unlock_schedule JSONB;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS person_terms JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS focus_config JSONB NOT NULL DEFAULT '{}';
 
--- Blocks table
-CREATE TABLE blocks (
+-- Blocking rules
+CREATE TABLE IF NOT EXISTS blocks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK (kind IN ('page', 'site', 'allow')),
@@ -61,23 +165,46 @@ CREATE TABLE blocks (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Usage tracking
-CREATE TABLE usage (
+-- Seconds counted against the daily limit, one row per day
+CREATE TABLE IF NOT EXISTS usage (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   day DATE NOT NULL,
   seconds INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, day)
 );
 
--- Attempt tracking
-CREATE TABLE attempts (
+-- Seconds per site per day, for the Analytics page
+CREATE TABLE IF NOT EXISTS site_usage (
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  day DATE NOT NULL,
+  site TEXT NOT NULL,
+  seconds INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day, site)
+);
+
+-- Attempts to open a blocked person's pages
+CREATE TABLE IF NOT EXISTS attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   target TEXT NOT NULL,
   at TIMESTAMPTZ NOT NULL
 );
 
--- Function to add usage
+-- Lock-in history, one row per day
+CREATE TABLE IF NOT EXISTS focus_days (
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  day DATE NOT NULL,
+  seconds INTEGER NOT NULL DEFAULT 0,
+  sessions INTEGER NOT NULL DEFAULT 0,
+  video INTEGER NOT NULL DEFAULT 0,
+  done INTEGER NOT NULL DEFAULT 0,
+  partly INTEGER NOT NULL DEFAULT 0,
+  pulled INTEGER NOT NULL DEFAULT 0,
+  early INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
+
+-- Adds to today's limit time and returns the new total
 CREATE OR REPLACE FUNCTION add_usage(p_day DATE, p_seconds INTEGER)
 RETURNS INTEGER AS $$
 DECLARE
@@ -96,52 +223,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Row Level Security
-ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE blocks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE usage ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attempts ENABLE ROW LEVEL SECURITY;
+-- Adds to one site's time for a day
+CREATE OR REPLACE FUNCTION add_site_usage(p_day DATE, p_site TEXT, p_seconds INTEGER)
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO site_usage (user_id, day, site, seconds)
+  VALUES (auth.uid(), p_day, p_site, p_seconds)
+  ON CONFLICT (user_id, day, site)
+  DO UPDATE SET seconds = site_usage.seconds + p_seconds;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Policies (users can only see their own data)
-CREATE POLICY "Users can manage their own settings"
-  ON settings FOR ALL USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can manage their own blocks"
-  ON blocks FOR ALL USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can manage their own usage"
-  ON usage FOR ALL USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can manage their own attempts"
-  ON attempts FOR ALL USING (auth.uid() = user_id);
-```
-
-**Extra watch terms (for blocking searches).** If your database was set up before search blocking existed, run this once:
-
-```sql
-ALTER TABLE settings ADD COLUMN IF NOT EXISTS person_terms JSONB NOT NULL DEFAULT '{}';
-```
-
-**Lock-in mode.** Run this to sync lock-in settings and session history. It is safe to run again:
-
-```sql
-ALTER TABLE settings ADD COLUMN IF NOT EXISTS focus_config JSONB NOT NULL DEFAULT '{}';
-
--- Lock-in history, one row per day
-CREATE TABLE IF NOT EXISTS focus_days (
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  day DATE NOT NULL,
-  seconds INTEGER NOT NULL DEFAULT 0,
-  sessions INTEGER NOT NULL DEFAULT 0,
-  video INTEGER NOT NULL DEFAULT 0,
-  done INTEGER NOT NULL DEFAULT 0,
-  partly INTEGER NOT NULL DEFAULT 0,
-  pulled INTEGER NOT NULL DEFAULT 0,
-  early INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (user_id, day)
-);
-
--- Function to add to a day's lock-in history
+-- Adds to a day's lock-in history
 CREATE OR REPLACE FUNCTION add_focus(
   p_day DATE, p_seconds INTEGER, p_sessions INTEGER, p_video INTEGER,
   p_done INTEGER, p_partly INTEGER, p_pulled INTEGER, p_early INTEGER
@@ -162,54 +255,124 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
+-- Row Level Security: each user only sees their own rows
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE blocks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usage ENABLE ROW LEVEL SECURITY;
+ALTER TABLE site_usage ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE focus_days ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage their own settings" ON settings;
+CREATE POLICY "Users can manage their own settings"
+  ON settings FOR ALL USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can manage their own blocks" ON blocks;
+CREATE POLICY "Users can manage their own blocks"
+  ON blocks FOR ALL USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can manage their own usage" ON usage;
+CREATE POLICY "Users can manage their own usage"
+  ON usage FOR ALL USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can manage their own site usage" ON site_usage;
+CREATE POLICY "Users can manage their own site usage"
+  ON site_usage FOR ALL USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can manage their own attempts" ON attempts;
+CREATE POLICY "Users can manage their own attempts"
+  ON attempts FOR ALL USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Users can manage their own focus days" ON focus_days;
 CREATE POLICY "Users can manage their own focus days"
   ON focus_days FOR ALL USING (auth.uid() = user_id);
 ```
 
-**Per-site usage (for the Analytics page).** If your database was set up before the Analytics page existed, run just this block:
+4. In **Authentication → Users**, create **one** user with an email and password.
 
-```sql
--- Per-site usage tracking
-CREATE TABLE site_usage (
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  day DATE NOT NULL,
-  site TEXT NOT NULL,
-  seconds INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (user_id, day, site)
-);
+### 2. Build and load the extension
 
--- Function to add per-site usage
-CREATE OR REPLACE FUNCTION add_site_usage(p_day DATE, p_site TEXT, p_seconds INTEGER)
-RETURNS VOID AS $$
-BEGIN
-  INSERT INTO site_usage (user_id, day, site, seconds)
-  VALUES (auth.uid(), p_day, p_site, p_seconds)
-  ON CONFLICT (user_id, day, site)
-  DO UPDATE SET seconds = site_usage.seconds + p_seconds;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-ALTER TABLE site_usage ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can manage their own site usage"
-  ON site_usage FOR ALL USING (auth.uid() = user_id);
+```bash
+git clone https://github.com/abdulaaaa/Sever.git
+cd Sever
+npm install
+cp .env.example .env
 ```
 
-**iPhone app time (optional).** Run this block if you want Instagram, LinkedIn, YouTube and WhatsApp time from your iPhone, sent by iOS Shortcuts (see [iPhone apps](#iphone-apps)):
+Put your Supabase values in `.env`:
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_KEY=your_anon_public_key_here
+```
+
+Then build:
+
+```bash
+npm run build
+```
+
+In Chrome, open `chrome://extensions/`, turn on **Developer mode**, click **Load unpacked** and choose the `dist` folder.
+
+### 3. Sign in
+
+There is no login screen. Sign in once per Chrome profile with a console script:
+
+1. Click the Sever icon and open **Settings**.
+2. Open the console (F12 → **Console**).
+3. Fill in your details and run:
+
+```javascript
+const email = 'your@email.com';
+const password = 'your_password';
+const supabaseUrl = 'https://your-project.supabase.co'; // same as VITE_SUPABASE_URL
+const supabaseKey = 'your_anon_key'; // same as VITE_SUPABASE_KEY
+
+fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+  method: 'POST',
+  headers: { apikey: supabaseKey, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password })
+})
+  .then((r) => r.json())
+  .then((j) => {
+    chrome.storage.local.set(
+      {
+        session: {
+          access_token: j.access_token,
+          refresh_token: j.refresh_token,
+          expires_at: Math.floor(Date.now() / 1000) + j.expires_in,
+          user: { id: j.user.id, email: j.user.email }
+        }
+      },
+      () => location.reload()
+    );
+  });
+```
+
+The page reloads and Sever is signed in. The session is kept across restarts and refreshes itself.
+
+### 4. Set up your rules
+
+In Settings, add your people, blocks and allow rules, and check the daily limit and its sites. See [How it works](#how-it-works) for what each one does.
+
+## iPhone setup (optional)
+
+This sends Instagram, LinkedIn, YouTube and WhatsApp time from your iPhone. See [iPhone apps](#iphone-apps) for how it is counted.
+
+### 1. Add the phone tables and function
+
+Run this in the Supabase SQL Editor. It is safe to run again.
 
 ```sql
 -- Secrets the phone may use. Only a hash is stored. RLS is on with no
 -- policies, so only the phone_event function can read these tables.
-CREATE TABLE phone_tokens (
+CREATE TABLE IF NOT EXISTS phone_tokens (
   token_hash TEXT PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
 );
 
 -- Apps that are open on the phone right now, waiting for their close event
-CREATE TABLE phone_open (
+CREATE TABLE IF NOT EXISTS phone_open (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   app TEXT NOT NULL,
   opened_at TIMESTAMPTZ NOT NULL,
@@ -291,7 +454,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 GRANT EXECUTE ON FUNCTION phone_event(TEXT, TEXT, TEXT, TEXT) TO anon;
 ```
 
-Then register a secret for the phone. Make a long random one (for example with `openssl rand -hex 32`), keep it for the Shortcuts setup, and run this with it filled in:
+### 2. Register a secret for the phone
+
+Make a long random secret (for example with `openssl rand -hex 32`), keep it for the Shortcuts, and run this with it filled in:
 
 ```sql
 INSERT INTO phone_tokens (token_hash, user_id)
@@ -301,320 +466,125 @@ VALUES (
 );
 ```
 
-6. Create **ONE** user account in **Authentication → Users** with email and password
+### 3. Create the Shortcuts automations
 
-### Step 2: Install the Extension
+Create eight automations, an opened and a closed one for each app:
 
-1. **Clone this repository**
-   ```bash
-   git clone https://github.com/yourusername/sever.git
-   cd sever
-   ```
+| App | `p_app` | Automations |
+|---|---|---|
+| Instagram | `instagram` | Is Opened → `open`, Is Closed → `close` |
+| LinkedIn | `linkedin` | Is Opened → `open`, Is Closed → `close` |
+| YouTube | `youtube` | Is Opened → `open`, Is Closed → `close` |
+| WhatsApp | `whatsapp` | Is Opened → `open`, Is Closed → `close` |
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+For each one:
 
-3. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   ```
-
-   Edit `.env` and add your Supabase credentials:
-   ```env
-   VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_KEY=your_anon_public_key_here
-   ```
-
-4. **Build the extension**
-   ```bash
-   npm run build
-   ```
-
-5. **Load into Chrome**
-   - Open Chrome and navigate to `chrome://extensions/`
-   - Enable **Developer mode** (toggle in top right)
-   - Click **Load unpacked**
-   - Select the `dist` folder from this project
-   - The Sever icon should appear in your toolbar
-
-### Step 3: Set Up Your Session (One-Time)
-
-Since this is a single-user extension with no login UI, you'll need to set up your session once using a browser console script:
-
-1. Click the extension icon and go to **Settings**
-2. Open the browser console (F12 → Console tab)
-3. Paste and run this script (replace with your credentials):
-
-```javascript
-const email = 'your@email.com';
-const password = 'your_password';
-const supabaseUrl = 'https://your-project.supabase.co';  // Same as VITE_SUPABASE_URL
-const supabaseKey = 'your_anon_key';  // Same as VITE_SUPABASE_KEY
-
-fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-  method: 'POST',
-  headers: { 'apikey': supabaseKey, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email, password })
-})
-.then(r => r.json())
-.then(j => {
-  chrome.storage.local.set({
-    session: {
-      access_token: j.access_token,
-      refresh_token: j.refresh_token,
-      expires_at: Math.floor(Date.now() / 1000) + j.expires_in,
-      user: { id: j.user.id, email: j.user.email }
-    }
-  }, () => location.reload());
-});
-```
-
-4. The page will reload and you're ready to go! The session persists across restarts and auto-refreshes.
-
-### Step 4: Configure Your Blocks
-
-1. In Settings, configure your blocking rules:
-   - **People**: Track specific social media profiles
-   - **Always blocked**: Sites or pages to block permanently
-   - **Scheduled blocks**: Time-based blocking (e.g., nights/weekends)
-   - **Always allowed**: Exceptions to your blocks
-   - **Daily limit**: Set your social media time budget
-
-## Usage
-
-### Adding Blocking Rules
-
-**Block a Person's Profile (Tracked)**
-1. Go to Settings → People section
-2. Enter a name and paste their profile URL
-3. Every access attempt is counted and displayed in the popup
-
-**Block a Page or Site Always**
-1. Settings → Always blocked section
-2. Paste a URL
-3. Choose "This page" or "Whole site"
-
-**Block on a Schedule**
-1. Settings → Scheduled blocks section
-2. Paste a URL, choose page/site
-3. Set start/end times and days of week
-4. Example: Block Twitter from 9pm to noon every day
-
-**Allow Exceptions**
-1. Settings → Always allowed section
-2. Paste a URL (e.g., `linkedin.com/jobs`)
-3. This bypasses all other blocking rules
-
-### Daily Social Media Limit
-
-- Set your desired minutes per day in Settings
-- The extension tracks time on configured "budget sites"
-- When the limit is reached, all budget sites are blocked until midnight
-- View remaining time in the extension popup
-
-### Syncing Across Devices
-
-Set up the session (using the console script) on each Chrome profile/device. Settings sync automatically within about a minute.
-
-### Analytics
-
-Click **Analytics** in the popup to see how much time you spend on each daily-limit site per day, and the average per day for each week (Monday to Sunday). Per-site numbers start from the day you install this version; earlier days only show a combined total.
-
-**YouTube and WhatsApp Web** are recorded too, but they never count against your daily limit and keep being recorded after the limit is used up:
-
-- Time only counts while the tab is the active tab in the focused window. A YouTube video that is playing sound keeps counting when you aren't touching the mouse or keyboard; it stops when the video is paused or muted, or the screen locks.
-- YouTube during a lock-in session isn't counted here. It stays in the lock-in table as "On YouTube".
-- The tiles show two figures side by side: **Limit sites**, and **With YouTube + WhatsApp**. The switch above the chart adds both sites to the chart and the tables.
-- No database change is needed: the time is stored in the existing `site_usage` table under its own site name (`extra:youtube.com`, `extra:whatsapp.com`). Numbers start from the day you install this version.
-- Rebuild and reload the extension on every device you use. A device still on an older version doesn't know these names and shows that time on its Analytics page as if it were limit-site time. The daily limit itself is not affected.
-- If you add YouTube or WhatsApp to your daily-limit sites, that site counts against the limit from then on like any other. Time recorded before the change stays where it was, so nothing is counted twice.
-
-#### iPhone apps
-
-Time in four iPhone apps can be sent to Sever. The phone reports each time an app is opened and closed, and the database turns each open and close pair into seconds.
-
-- **Instagram and LinkedIn** count against the daily limit and show as **Instagram (phone)** and **LinkedIn (phone)** on the Analytics page. With the default limit of 80 minutes, 15 are kept for Instagram on the phone, 5 for LinkedIn on the phone and 60 for websites.
-- **YouTube and WhatsApp** are tracked only, as **YouTube (phone)** and **WhatsApp (phone)**. Like the browser figures, they never count against the daily limit.
-
-How the hold works: the extension always keeps each phone app's allowance back from website time, whether or not you use it, so websites are blocked after 60 minutes and the day never goes over 80. Unused phone time is not passed on to websites. If an app goes over its allowance (for example ScreenZen is overridden), every extra phone minute comes off website time. The popup and blocked page show the time used and the minutes kept for the phone.
-
-The allowances are `PHONE_LIMITS` in `src/lib/utils/config.ts`. Sever doesn't block the apps on the phone; keep these equal to your ScreenZen limits by hand, and rebuild after changing them.
-
-1. Run the **iPhone app time** SQL block in [Step 1](#step-1-set-up-supabase) and register your phone secret.
-2. Check it works from a terminal before touching the phone. Send an open, wait a few seconds, then send the same request with `"p_event": "close"` and a later time; the second reply is the number of seconds added:
-
-   ```bash
-   curl -X POST "https://YOUR-PROJECT.supabase.co/rest/v1/rpc/phone_event" \
-     -H "apikey: YOUR-ANON-KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"p_secret":"YOUR-PHONE-SECRET","p_app":"instagram","p_event":"open","p_time":"2026-10-12T14:00:00+05:30"}'
-   ```
-
-   A test with `instagram` or `linkedin` adds real time to today's limit, so test before you start the day or with a short gap.
-
-3. On the iPhone, open **Shortcuts → Automation → +** and create eight automations: an opened and a closed one for each of Instagram, LinkedIn, YouTube and WhatsApp. For each one choose **App**, pick the app, tick only **Is Opened** or only **Is Closed**, choose **Run Immediately**, then **New Blank Automation** with these actions:
+1. In **Shortcuts → Automation**, tap **+** and choose **App**.
+2. Pick the app, tick only **Is Opened** or only **Is Closed**, and choose **Run Immediately**.
+3. Tap **Next**, then **New Blank Automation**, and add these actions:
    - **Date**: Current Date
    - **Format Date**: Date Format **ISO 8601**, with **Include ISO 8601 Time** on
-   - **Get Contents of URL**: URL `https://YOUR-PROJECT.supabase.co/rest/v1/rpc/phone_event`, Method **POST**, Headers `apikey` = your anon key and `Content-Type` = `application/json`, Request Body **JSON** with four text fields:
-     - `p_secret`: your phone secret
-     - `p_app`: `instagram`, `linkedin`, `youtube` or `whatsapp`
-     - `p_event`: `open` or `close`
-     - `p_time`: the **Formatted Date** from the action above
+   - **Get Contents of URL**:
+     - URL: `https://YOUR-PROJECT.supabase.co/rest/v1/rpc/phone_event`
+     - Method: **POST**
+     - Headers: `apikey` = your anon key, `Content-Type` = `application/json`
+     - Request Body: **JSON** with four text fields:
+       - `p_secret`: your phone secret
+       - `p_app`: from the table, in lowercase
+       - `p_event`: `open` or `close`
+       - `p_time`: the **Formatted Date** from the action above
 
-Good to know:
+Once one automation works, you can copy its **Get Contents of URL** action into the others and change only `p_app` and `p_event`.
 
-- The URL and anon key are the same values the extension uses. The anon key alone can't do anything here; the secret is what lets the phone add time, and it can only add time for these four apps. Someone holding it could use up website time through Instagram or LinkedIn, but can't read anything or remove time.
-- One session adds at most 2 hours (`v_cap` in the function), so a missed close can't add a whole day. If an app is opened again before its close arrived, the earlier open counts as nothing.
-- A session counts on the day it started, by the phone's local date, even if it runs past midnight.
-- Requests made while the phone is offline are lost, so that session isn't counted.
-- To stop a phone from adding time, delete its row from `phone_tokens`.
-- Instagram and LinkedIn time reaches the laptop within about a minute of the app being closed.
-- **Upgrading an existing install**: re-run the `phone_event` function from the SQL block above (the tables are unchanged), set the daily limit to 80 in Settings, add the four Instagram and LinkedIn automations, and load the new build on every device. A device on an older build holds nothing back, and with the limit still at 60 websites get only 40 minutes.
+### 4. Check it
 
-### Blocking searches for people
+Open one of the apps, wait a minute and close it. Then run this in the SQL Editor:
 
-For everyone under **People**, looking them up is blocked as well as their pages:
+```sql
+SELECT site, seconds FROM site_usage WHERE day = current_date AND site LIKE '%phone:%';
+```
 
-- **Searches**: on Google, Bing, DuckDuckGo, YouTube and the search pages of social sites, a search for their full name or a username from their blocked links goes to the blocked page and is counted.
-- **Lookalikes**: different capitalisation, dots, underscores, trailing numbers, letter swaps like `j4ne`, and one or two typos still match. A profile whose username resembles theirs is blocked too.
-- **Typing**: on search engines and social sites, typing a match into a text box clears it and blocks the page. Text is compared inside the page and never stored or sent.
-- **Extra terms**: add nicknames or other usernames per person in Settings. Removing them follows the settings lock.
+The app's row should show about 60 seconds. If nothing arrives, run the automation by hand in Shortcuts to see its error. `unknown app` means `p_app` is misspelled; `unknown secret` means the secret doesn't match.
 
-A first name on its own is never matched. This only covers this browser; allow the extension in incognito from `chrome://extensions/` to cover incognito windows.
+### Security
 
-### Lock-in mode
+The URL and anon key are the same values the extension uses, and alone they can't do anything here. The secret is what lets the phone add time, only for these four apps. Someone holding it could use up website time through Instagram or LinkedIn (at most 2 hours per session), but can't read anything or remove time. To stop a phone from adding time, delete its row from `phone_tokens`.
 
-Start a focus session from the popup: type what you're working on, set the length (60 minutes by default) and click **Lock in**.
+## Upgrading an existing install
 
-- **Blocked for the session**: your daily-limit sites, plus a separate lock-in list you set in Settings.
-- **YouTube**: search and watching stay open. The home feed, Shorts, the side menu, suggestions and comments are removed, autoplay is switched off for the session, and time there doesn't count against your daily limit while the timer runs.
-- **Audio**: a YouTube video of your choice plays on a loop in a pinned tab from the start. If Chrome won't start the sound by itself, press play once in that tab.
-- **Pause**: stops the timer and the audio; the blocks stay on. After 10 minutes paused you get a reminder.
-- **Ending early**: type a sentence and wait 30 seconds.
-- **Afterwards**: a break timer (sites stay blocked during it), and the Analytics page lists your sessions.
-
-Lock-in settings and history sync through Supabase like everything else. A running session itself belongs to the Chrome profile it was started in.
-
-### Settings Lock
-
-Lock your settings outside of a scheduled time window to prevent yourself from disabling blocks when you shouldn't. When locked, you can only change settings during the unlock schedule you define.
-
-## Privacy & Security
-
-- **Your Data, Your Control**: All data stored in YOUR private Supabase database
-- **No Third-Party Tracking**: Zero analytics, no data collection by us
-- **Local-First**: Works offline, credentials never leave your machine
-- **Open Source**: Audit the code yourself
+1. Pull the latest code, run `npm install` and `npm run build`.
+2. Re-run the SQL block in [Create the database](#1-create-the-database). It adds any missing tables, columns and functions and leaves your data alone.
+3. If you use the iPhone apps, re-run the block in [Add the phone tables and function](#1-add-the-phone-tables-and-function). Your secret and tables are kept.
+4. Reload the extension on **every** device. A device on an older build doesn't hold back the phone minutes, so it would let websites use them.
+5. Check the daily limit in Settings. From 80 minutes, the 20 phone minutes are held back; if it is still at 60, websites only get 40.
 
 ## Development
 
-### Tech Stack
+### Commands
 
-- **TypeScript 5.6** - Type safety
-- **Svelte 5** - Reactive UI framework
-- **Vite 5.4** - Fast build tool
-- **@supabase/supabase-js** - Official Supabase SDK for database operations
-- **@crxjs/vite-plugin** - Chrome extension bundler
-- **Vitest** - Unit tests
-- **ESLint and Prettier** - Linting and formatting
-- **GitHub Actions** - Runs all checks on pushes to `main` and on pull requests
-
-### Project Structure
-
-```
-sever/
-├── src/
-│   ├── background/          # Service worker (blocking logic, sync)
-│   ├── pages/
-│   │   ├── popup/          # Extension popup UI
-│   │   ├── options/        # Settings page UI
-│   │   ├── analytics/      # Usage analytics page
-│   │   └── blocked/        # Blocked page display
-│   ├── content/            # Content scripts (countdown timer)
-│   ├── lib/
-│   │   ├── services/       # Supabase SDK integration
-│   │   ├── types/          # TypeScript interfaces
-│   │   └── utils/          # Core logic (matching, scheduling)
-│   └── assets/             # Icons
-├── .github/workflows/      # CI workflow
-├── dist/                   # Build output (load in Chrome)
-└── .env                    # Your credentials (gitignored)
+```bash
+npm run dev          # Build to dist/ and rebuild on change
+npm run build        # Production build
+npm run check        # Type checking
+npm run lint         # ESLint
+npm run format       # Format with Prettier (format:check to check only)
+npm test             # Unit tests (test:watch to re-run on change)
 ```
 
-### Making Changes
+Reload the extension in `chrome://extensions/` after a build. Tests live next to the code as `*.test.ts` and use stub configuration, never your `.env`. GitHub Actions runs check, lint, format:check, test and build on pushes to `main` and on pull requests.
 
-1. **Development Mode** (with hot reload):
-   ```bash
-   npm run dev
-   ```
-   - Builds to `dist/` and watches for changes
-   - Reload extension in Chrome to see updates
+To skip the settings lock while testing, build with `VITE_DEV_MODE=true` set (in `.env` or on the command line). Rebuild without it afterwards.
 
-2. **Production Build**:
-   ```bash
-   npm run build
-   ```
+### Tech stack
 
-3. **Checks** (CI runs all of these):
-   ```bash
-   npm run check          # Type checking
-   npm run lint           # ESLint
-   npm run format:check   # Prettier, without writing (npm run format to fix)
-   npm test               # Unit tests (npm run test:watch to re-run on change)
-   ```
-   Tests live next to the code as `*.test.ts` and use stub configuration, never your `.env`.
+TypeScript 5.6, Svelte 5, Vite 5.4 with `@crxjs/vite-plugin`, `@supabase/supabase-js` v2, Vitest, ESLint and Prettier. The extension uses the Chrome `declarativeNetRequest`, `storage` and `alarms` APIs.
 
-4. **Reload extension in Chrome**:
-   - Go to `chrome://extensions/`
-   - Click the reload icon on the Sever card
+### Project structure
 
-### Key Files
-
-- **Blocking logic**: `src/background/background.ts`
-- **URL matching**: `src/lib/utils/common.ts`
-- **Supabase SDK**: `src/lib/services/supa.ts`
-- **Popup UI**: `src/pages/popup/Popup.svelte`
-- **Settings UI**: `src/pages/options/Options.svelte`
-
-### Architecture
-
-- **Background Worker**: Runs blocking logic, manages sync with Supabase every 1 minute
-- **Content Scripts**: Injects countdown timer on budget sites
-- **Svelte Pages**: Reactive UI for popup, options, and blocked pages
-- **Supabase SDK**: Type-safe database operations with automatic token refresh
-- **Chrome Storage**: Session persists locally, auto-refreshes via SDK
+```
+src/
+├── background/      Service worker: blocking rules, time counting, sync every minute
+├── content/         Content scripts: countdown, typing checks, lock-in page changes
+├── pages/
+│   ├── popup/       Time left, attempts, lock-in controls
+│   ├── options/     Settings page
+│   ├── blocked/     Page shown when something is blocked
+│   └── analytics/   Time per site per day, weekly averages, lock-in history
+├── lib/
+│   ├── services/    Supabase access
+│   ├── types/       Shared TypeScript types
+│   └── utils/
+│       ├── common.ts     URL matching, schedules, limit and state logic
+│       ├── analytics.ts  Turns usage rows into days and weekly averages
+│       ├── config.ts     Configuration, tracked-only sites, phone allowances
+│       └── defaults.ts   Starting blocks and settings
+└── assets/          Icons
+```
 
 ## Troubleshooting
 
-**Extension not loading**
-- Verify you ran `npm run build` successfully
-- Load the `dist` folder, not the root folder
-- Check Chrome's extension error messages in `chrome://extensions/`
+**The extension doesn't load**
+- Load the `dist` folder, not the project folder, and check that `npm run build` succeeded.
+- Look for errors on the Sever card in `chrome://extensions/`.
 
-**Sync not working**
-- Check internet connection
-- Verify Supabase credentials in `.env` (must start with `VITE_`)
-- Check browser console for errors (F12 → Console)
-- Confirm database tables were created correctly
-- Verify session is set up (run the console script again if needed)
+**The build fails**
+- Check that `.env` exists with `VITE_SUPABASE_URL` and `VITE_SUPABASE_KEY` set.
+- Check Node.js with `node --version` (22 is expected), then run `npm install`.
 
-**Blocks not applying**
-- Wait ~1 minute after making changes for sync
-- Reload tabs for changes to take effect
-- Check browser console for errors
+**Nothing syncs, or "signed-out" errors**
+- Run the sign-in script again on that profile.
+- Check that the Supabase project is active, the user exists and the SQL block ran without errors.
+- Look in the console of the Settings page (F12) for errors.
 
-**Build fails**
-- Ensure `.env` file exists with valid credentials
-- Check that Node.js 22 is installed: `node --version`
-- Make sure `VITE_SUPABASE_URL` and `VITE_SUPABASE_KEY` are set
-- Run `npm install` to ensure dependencies are installed
+**Rules or settings don't apply**
+- Changes from another device take about a minute. Reload open tabs afterwards.
 
-**Session expired / "signed-out" errors**
-- The session auto-refreshes, but if it fails, run the console script again
-- Check that your Supabase user account still exists
-- Verify your Supabase project is still active
+**The time left looks wrong**
+- Reload the extension in `chrome://extensions/` after every build. Pages can pick up the new build before the background worker does, and the two then disagree.
+- Make sure every device runs the same build.
+
+**iPhone time doesn't show**
+- See [Check it](#4-check-it) in the iPhone setup.
 
 ## License
 
@@ -639,11 +609,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-## Support
-
-For bugs or feature requests, please [open an issue](https://github.com/yourusername/sever/issues) on GitHub.
-
----
-
-**Note**: This extension requires you to set up your own Supabase project. This ensures your data privacy and gives you full control over your information.
