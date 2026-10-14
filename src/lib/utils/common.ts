@@ -1,6 +1,6 @@
 // Matching, schedules and other shared helpers.
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS, DEFAULT_FOCUS_CONFIG } from './defaults';
-import { DEV_MODE, EXTRA_SITES, EXTRA_PREFIX } from './config';
+import { DEV_MODE, EXTRA_SITES, EXTRA_PREFIX, PHONE_LIMITS } from './config';
 import { watchTokens, watchSquash, watchMatch, type WatchTerm } from './watch';
 import type {
   Block,
@@ -189,6 +189,31 @@ export function summarize(times: number[] = [], now: Date = new Date()): Attempt
 }
 
 // ---------- current state ----------
+export interface LimitUsage {
+  web: number; // website seconds, synced and pending
+  phone: number; // phone seconds actually used in the limited apps
+  held: number; // phone seconds held back: each app's time or its allowance, whichever is more
+  used: number; // web + held, the figure compared with the limit
+}
+
+// Splits today's limit time into website and phone time. The server total already includes the
+// phone seconds; pending seconds are website time not yet uploaded.
+export function limitUsage(
+  server: number,
+  pending: number,
+  phone: Record<string, number>
+): LimitUsage {
+  let phoneUsed = 0;
+  let held = 0;
+  for (const [site, minutes] of Object.entries(PHONE_LIMITS)) {
+    const s = phone[site] || 0;
+    phoneUsed += s;
+    held += Math.max(s, minutes * 60);
+  }
+  const web = Math.max(0, server - phoneUsed) + pending;
+  return { web, phone: phoneUsed, held, used: web + held };
+}
+
 interface StorageData {
   cache?: Cache;
   pendingUsage?: PendingUsage;

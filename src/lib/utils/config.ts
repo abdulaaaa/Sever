@@ -17,6 +17,12 @@ export const EXTRA_PREFIX = 'extra:';
 export const PHONE_SITES = ['youtube.com', 'whatsapp.com'];
 export const PHONE_PREFIX = EXTRA_PREFIX + 'phone:';
 
+// iPhone apps whose time counts against the daily limit, stored under "phone:instagram.com" and
+// also added to usage by phone_event. Each allowance (minutes) is always held back from website
+// time. Keep these equal to the ScreenZen limits by hand.
+export const PHONE_LIMIT_PREFIX = 'phone:';
+export const PHONE_LIMITS: Record<string, number> = { 'instagram.com': 15, 'linkedin.com': 5 };
+
 // Validate configuration at runtime
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('Sever: Missing Supabase configuration. Check your .env file.');

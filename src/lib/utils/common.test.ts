@@ -16,6 +16,7 @@ import {
   nextUnlockTime,
   dayKey,
   summarize,
+  limitUsage,
   budgetSiteFor,
   isBudgetSite,
   extraSiteFor,
@@ -394,6 +395,38 @@ const JANE = block({ id: 'jane', target: 'instagram.com/jane.doe', person: 'Jane
 // The default night schedule runs from 9 pm to noon.
 const AFTERNOON = at(5, 13);
 const NIGHT = at(5, 22);
+
+describe('limitUsage', () => {
+  it('holds 20 minutes when nothing is used on the phone', () => {
+    expect(limitUsage(0, 0, {})).toEqual({ web: 0, phone: 0, held: 1200, used: 1200 });
+  });
+
+  it('keeps the hold at 20 minutes while phone time is within the allowances', () => {
+    const r = limitUsage(1500, 0, { 'instagram.com': 600, 'linkedin.com': 300 });
+    expect(r).toEqual({ web: 600, phone: 900, held: 1200, used: 1800 });
+  });
+
+  it("holds an app's real time when it goes over, plus the other app's allowance", () => {
+    const r = limitUsage(1080, 0, { 'instagram.com': 1080 });
+    expect(r.held).toBe(1080 + 300);
+    expect(r.web).toBe(0);
+  });
+
+  it('takes phone time off the total and never goes below zero', () => {
+    expect(limitUsage(2000, 0, { 'linkedin.com': 500 }).web).toBe(1500);
+    expect(limitUsage(100, 0, { 'instagram.com': 500 }).web).toBe(0);
+  });
+
+  it('adds pending website seconds', () => {
+    expect(limitUsage(600, 120, {}).web).toBe(720);
+  });
+
+  it('runs websites out at 60 minutes with a limit of 80', () => {
+    const limit = 80 * 60;
+    expect(limitUsage(3599, 0, {}).used).toBeLessThan(limit);
+    expect(limitUsage(3600, 0, {}).used).toBeGreaterThanOrEqual(limit);
+  });
+});
 
 describe('budgetSiteFor and isBudgetSite', () => {
   it('finds the budget site an address belongs to', () => {
