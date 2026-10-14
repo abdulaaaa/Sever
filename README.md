@@ -42,7 +42,7 @@ The extension includes:
 -- Settings table
 CREATE TABLE settings (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  daily_limit_minutes INTEGER NOT NULL DEFAULT 60,
+  daily_limit_minutes INTEGER NOT NULL DEFAULT 80,
   budget_sites TEXT[] NOT NULL DEFAULT '{}',
   person_terms JSONB NOT NULL DEFAULT '{}',
   focus_config JSONB NOT NULL DEFAULT '{}',

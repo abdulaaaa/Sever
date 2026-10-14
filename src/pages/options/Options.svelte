@@ -28,7 +28,7 @@
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Form inputs
-  let limitValue = $state(60);
+  let limitValue = $state(80);
   let budgetInput = $state('');
   let personName = $state('');
   let personLink = $state('');

@@ -26,7 +26,7 @@ export const DEFAULT_BLOCKS: Block[] = [
 ].map((b, i) => ({ id: 'default-' + (i + 1), person: null, schedule: null, ...b })) as Block[];
 
 export const DEFAULT_SETTINGS: Settings = {
-  daily_limit_minutes: 60,
+  daily_limit_minutes: 80,
   budget_sites: [
     'x.com',
     'reddit.com',
