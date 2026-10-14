@@ -80,6 +80,28 @@ describe('buildUsage', () => {
     expect(day.totalAll).toBe(700);
   });
 
+  it('counts limited phone time as limit time, once', () => {
+    // phone_event adds Instagram phone time to both site_usage and the usage total.
+    const data = buildUsage(
+      START,
+      TODAY,
+      [
+        { day: '2026-09-30', site: 'reddit.com', seconds: 600 },
+        { day: '2026-09-30', site: 'phone:instagram.com', seconds: 400 }
+      ],
+      [{ day: '2026-09-30', seconds: 1000 }],
+      {},
+      {},
+      7,
+      EXTRA
+    );
+    const day = data.days[2];
+    expect(data.series).toContain('phone:instagram.com');
+    expect(data.extra).not.toContain('phone:instagram.com');
+    expect(day.values).toEqual({ 'reddit.com': 600, 'phone:instagram.com': 400 });
+    expect(day.total).toBe(1000);
+  });
+
   it('treats every site as a limit site when no tracked-only sites are given', () => {
     const data = build();
     const day = data.days[2];

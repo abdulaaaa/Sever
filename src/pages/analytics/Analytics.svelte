@@ -1,7 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { dayKey, FOCUS_KEYS, emptyFocusDay, focusLeft } from '../../lib/utils/common';
-  import { EXTRA_SITES, EXTRA_PREFIX, PHONE_SITES, PHONE_PREFIX } from '../../lib/utils/config';
+  import {
+    EXTRA_SITES,
+    EXTRA_PREFIX,
+    PHONE_SITES,
+    PHONE_PREFIX,
+    PHONE_LIMIT_PREFIX
+  } from '../../lib/utils/config';
   import { fetchSiteUsageSince, fetchUsageSince, fetchFocusSince } from '../../lib/services/supa';
   import {
     addDays,
@@ -157,7 +163,9 @@
     [EXTRA_PREFIX + 'youtube.com']: 'YouTube',
     [EXTRA_PREFIX + 'whatsapp.com']: 'WhatsApp',
     [PHONE_PREFIX + 'youtube.com']: 'YouTube (phone)',
-    [PHONE_PREFIX + 'whatsapp.com']: 'WhatsApp (phone)'
+    [PHONE_PREFIX + 'whatsapp.com']: 'WhatsApp (phone)',
+    [PHONE_LIMIT_PREFIX + 'instagram.com']: 'Instagram (phone)',
+    [PHONE_LIMIT_PREFIX + 'linkedin.com']: 'LinkedIn (phone)'
   };
   const label = (key: string): string => NAMES[key] || key;
   // The phone columns belong to the same two apps, so the short label names each app once.
