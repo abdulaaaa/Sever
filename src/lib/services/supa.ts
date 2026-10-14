@@ -1,7 +1,7 @@
 // Supabase client using official SDK for type-safe database operations
 import { createClient } from '@supabase/supabase-js';
 import { refreshRejected } from './session';
-import { SUPABASE_URL, SUPABASE_KEY } from '../utils/config';
+import { SUPABASE_URL, SUPABASE_KEY, PHONE_LIMITS, PHONE_LIMIT_PREFIX } from '../utils/config';
 import type {
   Session,
   Block,
@@ -101,6 +101,23 @@ export async function fetchUsage(day: string): Promise<Pick<UsageDayRow, 'second
 
     if (error) throw new Error(`Database error: ${error.message}`);
     return data || [];
+  });
+}
+
+// Today's seconds in the limited iPhone apps, keyed by site ("instagram.com").
+export async function fetchPhoneUsage(day: string): Promise<Record<string, number>> {
+  return withAuth(async () => {
+    const keys = Object.keys(PHONE_LIMITS).map((d) => PHONE_LIMIT_PREFIX + d);
+    const { data, error } = await supabase
+      .from('site_usage')
+      .select('site, seconds')
+      .eq('day', day)
+      .in('site', keys);
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+    const out: Record<string, number> = {};
+    for (const r of data || []) out[r.site.slice(PHONE_LIMIT_PREFIX.length)] = r.seconds;
+    return out;
   });
 }
 

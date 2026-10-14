@@ -238,9 +238,9 @@ export async function loadState(): Promise<ExtensionState> {
   const blocks = s.cache?.blocks ?? DEFAULT_BLOCKS;
   const settings = s.cache?.settings ?? DEFAULT_SETTINGS;
   const day = dayKey();
-  const serverUsed = s.cache?.usage?.day === day ? s.cache.usage.seconds : 0;
+  const today = s.cache?.usage?.day === day ? s.cache.usage : null;
   const pending = (s.pendingUsage || {})[day] || 0;
-  const used = serverUsed + pending;
+  const { web, phone, held, used } = limitUsage(today?.seconds || 0, pending, today?.phone || {});
   const limit = settings.daily_limit_minutes * 60;
 
   return {
@@ -249,6 +249,9 @@ export async function loadState(): Promise<ExtensionState> {
     used,
     limit,
     out: used >= limit,
+    web,
+    phone,
+    held,
     session: s.session || null,
     pendingAttempts: s.pendingAttempts || [],
     lastError: s.lastError || null,

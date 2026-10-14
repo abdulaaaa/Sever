@@ -26,6 +26,7 @@ import {
   fetchBlocks,
   fetchSettings,
   fetchUsage,
+  fetchPhoneUsage,
   insertBlocks,
   insertSettings,
   addUsage,
@@ -163,10 +164,11 @@ async function sync(): Promise<void> {
     await flushSiteUsage().catch((e) => console.warn('Sever: site usage not synced:', e));
     await flushFocus().catch((e) => console.warn('Sever: lock-in history not synced:', e));
     const day = dayKey();
-    let [blocks, settingsRows, usageRows] = await Promise.all([
+    let [blocks, settingsRows, usageRows, phone] = await Promise.all([
       fetchBlocks(),
       fetchSettings(),
-      fetchUsage(day)
+      fetchUsage(day),
+      fetchPhoneUsage(day)
     ]);
 
     // First sign-in ever: copy the starting blocks and settings into the database.
@@ -189,7 +191,7 @@ async function sync(): Promise<void> {
           person_terms: s.person_terms || {},
           focus_config: s.focus_config || {}
         },
-        usage: { day, seconds: usageRows[0]?.seconds || 0 }
+        usage: { day, seconds: usageRows[0]?.seconds || 0, phone }
       },
       syncedAt: Date.now(),
       lastError: null

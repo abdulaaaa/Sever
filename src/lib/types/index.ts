@@ -45,6 +45,8 @@ export interface Cache {
   usage: {
     day: string;
     seconds: number;
+    // Today's seconds per limited iPhone app, e.g. { 'instagram.com': 600 }. Already in seconds.
+    phone?: Record<string, number>;
   };
 }
 
@@ -52,9 +54,12 @@ export interface Cache {
 export interface ExtensionState {
   blocks: Block[];
   settings: Settings;
-  used: number;
+  used: number; // website time plus the phone time held back
   limit: number;
   out: boolean;
+  web: number; // website seconds today
+  phone: number; // seconds actually used in the limited iPhone apps today
+  held: number; // seconds held back for those apps
   session: Session | null;
   pendingAttempts: AttemptRecord[];
   lastError: string | null;
