@@ -1,5 +1,6 @@
 // Supabase client using official SDK for type-safe database operations
 import { createClient } from '@supabase/supabase-js';
+import { refreshRejected } from './session';
 import { SUPABASE_URL, SUPABASE_KEY } from '../utils/config';
 import type {
   Session,
@@ -13,9 +14,10 @@ import type {
   FocusDayRow
 } from '../types';
 
-// Initialize SDK client
+// Initialize SDK client. Tokens are refreshed in withAuth, which also saves them; the SDK's own
+// timer would replace the refresh token in memory only and leave a used one in storage.
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: true }
+  auth: { persistSession: false, autoRefreshToken: false }
 });
 
 // Session management (still use chrome.storage for persistence)
@@ -24,13 +26,34 @@ export async function getSession(): Promise<Session | null> {
   return session || null;
 }
 
-async function setSupabaseSession(session: Session | null): Promise<void> {
-  if (session) {
-    await supabase.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token
-    });
+// Swaps a nearly expired session for a new one and saves it.
+async function refreshSession(session: Session): Promise<void> {
+  const { data, error } = await supabase.auth.refreshSession({
+    refresh_token: session.refresh_token
+  });
+  if (data.session) {
+    const newSession: Session = {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_at: Math.floor(Date.now() / 1000) + (data.session.expires_in || 3600),
+      user: { id: data.session.user.id, email: data.session.user.email || '' }
+    };
+    await chrome.storage.local.set({ session: newSession });
+    return;
   }
+  if (!refreshRejected(error)) throw new Error('Could not refresh the session');
+
+  // Another page or the background worker may have refreshed first and saved a newer session.
+  const latest = await getSession();
+  if (latest && latest.refresh_token !== session.refresh_token) {
+    await supabase.auth.setSession({
+      access_token: latest.access_token,
+      refresh_token: latest.refresh_token
+    });
+    return;
+  }
+  await chrome.storage.local.remove('session');
+  throw new Error('Session expired');
 }
 
 // Helper to execute database operations with auth
@@ -38,27 +61,14 @@ async function withAuth<T>(fn: () => Promise<T>): Promise<T> {
   const session = await getSession();
   if (!session) throw new Error('signed-out');
 
-  await setSupabaseSession(session);
-
-  // Check if token needs refresh
   const now = Math.floor(Date.now() / 1000);
   if (session.expires_at - now < 60) {
-    const { data, error } = await supabase.auth.refreshSession({
+    await refreshSession(session);
+  } else {
+    await supabase.auth.setSession({
+      access_token: session.access_token,
       refresh_token: session.refresh_token
     });
-    if (error) {
-      await chrome.storage.local.remove('session');
-      throw new Error('Session expired');
-    }
-    if (data.session) {
-      const newSession: Session = {
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        expires_at: Math.floor(Date.now() / 1000) + (data.session.expires_in || 3600),
-        user: { id: data.session.user.id, email: data.session.user.email || '' }
-      };
-      await chrome.storage.local.set({ session: newSession });
-    }
   }
 
   return fn();
