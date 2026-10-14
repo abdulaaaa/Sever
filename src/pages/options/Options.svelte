@@ -571,7 +571,7 @@
     <div class="tiles">
       <div class="tile">
         <span class="muted small">Time left today</span>
-        <b>{fmtMin(st.limit - st.used)}</b>
+        <b>{fmtMin(st.limit - st.used + Math.max(0, st.held - st.phone))}</b>
       </div>
       <div class="tile">
         <span class="muted small">Daily limit</span>

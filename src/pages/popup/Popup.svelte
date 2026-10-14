@@ -14,7 +14,9 @@
 
   let tickInterval: ReturnType<typeof setInterval> | null = null;
   let syncInterval: ReturnType<typeof setInterval> | null = null;
-  let localRemaining = 0;
+  let localRemaining = 0; // website seconds left
+  let phoneKept = 0; // phone allowance seconds not yet used, shown as part of the time left
+  let limitSeconds = 0;
   let isTracking = false;
 
   function formatTimeRemaining(seconds: number): string {
@@ -33,7 +35,9 @@
   }
 
   function updateTimeUI(): void {
-    timeLeft = formatTimeRemaining(localRemaining);
+    const left = localRemaining + phoneKept;
+    timeLeft = formatTimeRemaining(left);
+    if (limitSeconds) fillPercent = Math.min(100, ((limitSeconds - left) / limitSeconds) * 100);
     const minutesLeft = Math.ceil(localRemaining / 60);
     barClass = 'bar' + (localRemaining === 0 ? ' out' : minutesLeft <= 10 ? ' warn' : '');
   }
@@ -151,20 +155,17 @@
     }
 
     localRemaining = Math.max(0, st.limit - st.used);
-    timeLeft = formatTimeRemaining(localRemaining);
+    phoneKept = Math.max(0, st.held - st.phone);
+    limitSeconds = st.limit;
     usedText = `${Math.floor((st.web + st.phone) / 60)} of ${st.settings.daily_limit_minutes} min used`;
     const kept = Math.ceil((st.held - st.phone) / 60);
     phoneText =
       kept > 0
-        ? `${kept} min kept for the phone` +
+        ? (localRemaining === 0 ? 'Websites used up · ' : '') +
+          `${kept} min of it kept for the phone` +
           (st.phone >= 60 ? ` (${Math.floor(st.phone / 60)} min used there)` : '')
         : '';
-
-    const pct = Math.min(100, (st.used / st.limit) * 100);
-    fillPercent = pct;
-
-    const minutesLeft = Math.ceil(localRemaining / 60);
-    barClass = 'bar' + (localRemaining === 0 ? ' out' : minutesLeft <= 10 ? ' warn' : '');
+    updateTimeUI();
 
     startTicking();
 
