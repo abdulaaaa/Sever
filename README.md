@@ -198,7 +198,7 @@ CREATE POLICY "Users can manage their own site usage"
   ON site_usage FOR ALL USING (auth.uid() = user_id);
 ```
 
-**iPhone app time (optional, for the Analytics page).** Run this block if you want YouTube and WhatsApp time from your iPhone, sent by iOS Shortcuts (see [iPhone YouTube and WhatsApp](#iphone-youtube-and-whatsapp)):
+**iPhone app time (optional).** Run this block if you want Instagram, LinkedIn, YouTube and WhatsApp time from your iPhone, sent by iOS Shortcuts (see [iPhone apps](#iphone-apps)):
 
 ```sql
 -- Secrets the phone may use. Only a hash is stored. RLS is on with no
@@ -221,9 +221,11 @@ ALTER TABLE phone_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE phone_open ENABLE ROW LEVEL SECURITY;
 
 -- Called by the iPhone when an app is opened or closed. A close is paired with
--- the open before it and the seconds between them are added to site_usage under
--- "extra:phone:<site>". It never touches the usage table, so this time cannot
--- count against the daily limit. Returns the seconds added.
+-- the open before it and the seconds between them are added to site_usage.
+-- Instagram and LinkedIn are stored under "phone:<site>" and also added to the
+-- usage table, so they count against the daily limit. YouTube and WhatsApp are
+-- stored under "extra:phone:<site>" and never touch usage, so they are tracked
+-- only. Returns the seconds added.
 CREATE OR REPLACE FUNCTION phone_event(p_secret TEXT, p_app TEXT, p_event TEXT, p_time TEXT)
 RETURNS INTEGER AS $$
 DECLARE
@@ -242,6 +244,8 @@ BEGIN
   END IF;
 
   v_site := CASE v_app
+    WHEN 'instagram' THEN 'phone:instagram.com'
+    WHEN 'linkedin' THEN 'phone:linkedin.com'
     WHEN 'youtube' THEN 'extra:phone:youtube.com'
     WHEN 'whatsapp' THEN 'extra:phone:whatsapp.com'
   END;
@@ -272,6 +276,12 @@ BEGIN
     VALUES (v_user, v_open.day, v_site, v_secs)
     ON CONFLICT (user_id, day, site)
     DO UPDATE SET seconds = s.seconds + v_secs;
+    IF v_site LIKE 'phone:%' THEN
+      INSERT INTO public.usage AS u (user_id, day, seconds)
+      VALUES (v_user, v_open.day, v_secs)
+      ON CONFLICT (user_id, day)
+      DO UPDATE SET seconds = u.seconds + v_secs;
+    END IF;
     RETURN v_secs;
   END IF;
   RAISE EXCEPTION 'unknown event';
@@ -421,9 +431,16 @@ Click **Analytics** in the popup to see how much time you spend on each daily-li
 - Rebuild and reload the extension on every device you use. A device still on an older version doesn't know these names and shows that time on its Analytics page as if it were limit-site time. The daily limit itself is not affected.
 - If you add YouTube or WhatsApp to your daily-limit sites, that site counts against the limit from then on like any other. Time recorded before the change stays where it was, so nothing is counted twice.
 
-#### iPhone YouTube and WhatsApp
+#### iPhone apps
 
-Time in the YouTube and WhatsApp apps on your iPhone can be shown too, as its own **YouTube (phone)** and **WhatsApp (phone)** columns. Like the browser figures, it never counts against your daily limit. The phone reports each time an app is opened and closed, and the database turns each open and close pair into seconds.
+Time in four iPhone apps can be sent to Sever. The phone reports each time an app is opened and closed, and the database turns each open and close pair into seconds.
+
+- **Instagram and LinkedIn** count against the daily limit and show as **Instagram (phone)** and **LinkedIn (phone)** on the Analytics page. With the default limit of 80 minutes, 15 are kept for Instagram on the phone, 5 for LinkedIn on the phone and 60 for websites.
+- **YouTube and WhatsApp** are tracked only, as **YouTube (phone)** and **WhatsApp (phone)**. Like the browser figures, they never count against the daily limit.
+
+How the hold works: the extension always keeps each phone app's allowance back from website time, whether or not you use it, so websites are blocked after 60 minutes and the day never goes over 80. Unused phone time is not passed on to websites. If an app goes over its allowance (for example ScreenZen is overridden), every extra phone minute comes off website time. The popup and blocked page show the time used and the minutes kept for the phone.
+
+The allowances are `PHONE_LIMITS` in `src/lib/utils/config.ts`. Sever doesn't block the apps on the phone; keep these equal to your ScreenZen limits by hand, and rebuild after changing them.
 
 1. Run the **iPhone app time** SQL block in [Step 1](#step-1-set-up-supabase) and register your phone secret.
 2. Check it works from a terminal before touching the phone. Send an open, wait a few seconds, then send the same request with `"p_event": "close"` and a later time; the second reply is the number of seconds added:
@@ -432,25 +449,29 @@ Time in the YouTube and WhatsApp apps on your iPhone can be shown too, as its ow
    curl -X POST "https://YOUR-PROJECT.supabase.co/rest/v1/rpc/phone_event" \
      -H "apikey: YOUR-ANON-KEY" \
      -H "Content-Type: application/json" \
-     -d '{"p_secret":"YOUR-PHONE-SECRET","p_app":"youtube","p_event":"open","p_time":"2026-10-12T14:00:00+05:30"}'
+     -d '{"p_secret":"YOUR-PHONE-SECRET","p_app":"instagram","p_event":"open","p_time":"2026-10-12T14:00:00+05:30"}'
    ```
 
-3. On the iPhone, open **Shortcuts → Automation → +** and create four automations: YouTube opened, YouTube closed, WhatsApp opened, WhatsApp closed. For each one choose **App**, pick the app, tick only **Is Opened** or only **Is Closed**, choose **Run Immediately**, then **New Blank Automation** with these actions:
+   A test with `instagram` or `linkedin` adds real time to today's limit, so test before you start the day or with a short gap.
+
+3. On the iPhone, open **Shortcuts → Automation → +** and create eight automations: an opened and a closed one for each of Instagram, LinkedIn, YouTube and WhatsApp. For each one choose **App**, pick the app, tick only **Is Opened** or only **Is Closed**, choose **Run Immediately**, then **New Blank Automation** with these actions:
    - **Date**: Current Date
    - **Format Date**: Date Format **ISO 8601**, with **Include ISO 8601 Time** on
    - **Get Contents of URL**: URL `https://YOUR-PROJECT.supabase.co/rest/v1/rpc/phone_event`, Method **POST**, Headers `apikey` = your anon key and `Content-Type` = `application/json`, Request Body **JSON** with four text fields:
      - `p_secret`: your phone secret
-     - `p_app`: `youtube` or `whatsapp`
+     - `p_app`: `instagram`, `linkedin`, `youtube` or `whatsapp`
      - `p_event`: `open` or `close`
      - `p_time`: the **Formatted Date** from the action above
 
 Good to know:
 
-- The URL and anon key are the same values the extension uses. The anon key alone can't do anything here; the secret is what lets the phone add time, and it can only add time for these two apps.
+- The URL and anon key are the same values the extension uses. The anon key alone can't do anything here; the secret is what lets the phone add time, and it can only add time for these four apps. Someone holding it could use up website time through Instagram or LinkedIn, but can't read anything or remove time.
 - One session adds at most 2 hours (`v_cap` in the function), so a missed close can't add a whole day. If an app is opened again before its close arrived, the earlier open counts as nothing.
 - A session counts on the day it started, by the phone's local date, even if it runs past midnight.
 - Requests made while the phone is offline are lost, so that session isn't counted.
 - To stop a phone from adding time, delete its row from `phone_tokens`.
+- Instagram and LinkedIn time reaches the laptop within about a minute of the app being closed.
+- **Upgrading an existing install**: re-run the `phone_event` function from the SQL block above (the tables are unchanged), set the daily limit to 80 in Settings, add the four Instagram and LinkedIn automations, and load the new build on every device. A device on an older build holds nothing back, and with the limit still at 60 websites get only 40 minutes.
 
 ### Blocking searches for people
 
