@@ -26,6 +26,17 @@ export async function getSession(): Promise<Session | null> {
   return session || null;
 }
 
+// Gives the saved tokens to the client. setSession reports failure instead of throwing, and a client
+// left without a session reads as anonymous: row-level security then returns no rows and no error,
+// which looks exactly like an empty database. So a failure has to stop the operation here.
+async function useSession(session: Session): Promise<void> {
+  const { error } = await supabase.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token
+  });
+  if (error) throw new Error('Could not use the session');
+}
+
 // Swaps a nearly expired session for a new one and saves it.
 async function refreshSession(session: Session): Promise<void> {
   const { data, error } = await supabase.auth.refreshSession({
@@ -46,10 +57,7 @@ async function refreshSession(session: Session): Promise<void> {
   // Another page or the background worker may have refreshed first and saved a newer session.
   const latest = await getSession();
   if (latest && latest.refresh_token !== session.refresh_token) {
-    await supabase.auth.setSession({
-      access_token: latest.access_token,
-      refresh_token: latest.refresh_token
-    });
+    await useSession(latest);
     return;
   }
   await chrome.storage.local.remove('session');
@@ -65,10 +73,7 @@ async function withAuth<T>(fn: () => Promise<T>): Promise<T> {
   if (session.expires_at - now < 60) {
     await refreshSession(session);
   } else {
-    await supabase.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token
-    });
+    await useSession(session);
   }
 
   return fn();

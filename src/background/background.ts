@@ -172,12 +172,14 @@ async function sync(): Promise<void> {
     ]);
 
     // First sign-in ever: copy the starting blocks and settings into the database.
+    // Settings go first: the database allows one row per user, so if another profile got there
+    // first this throws and the blocks, which have nothing to stop a second copy, are left alone.
     if (!settingsRows.length) {
+      settingsRows = await insertSettings([DEFAULT_SETTINGS]);
       if (!blocks.length) {
         const rows = DEFAULT_BLOCKS.map(({ id, ...b }) => b);
         blocks = await insertBlocks(rows);
       }
-      settingsRows = await insertSettings([DEFAULT_SETTINGS]);
     }
 
     const s = settingsRows[0];
