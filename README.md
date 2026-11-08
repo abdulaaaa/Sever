@@ -114,7 +114,7 @@ Lock-in settings and history sync like everything else. A running session belong
 
 ### Analytics
 
-Click **Analytics** in the popup to see time per daily-limit site per day, and the average per day for each week (Monday to Sunday).
+Click **Analytics** in the popup to see time per daily-limit site per day, and the average per day for each week (Sunday to Saturday).
 
 - **Phone columns**: Instagram (phone) and LinkedIn (phone) are limit time and rank like any other limit site.
 - **Tracked-only time**: YouTube and WhatsApp Web, and the YouTube and WhatsApp iPhone apps, are recorded but never count against the limit. They keep being recorded after the limit is used up. The tiles show **Limit sites** and **With YouTube + WhatsApp** side by side, and a switch adds them to the chart and tables.

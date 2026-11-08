@@ -45,12 +45,12 @@
     totalAll: number; // with YouTube and WhatsApp
   }
 
-  // Weeks run Monday to Sunday.
+  // Weeks run Sunday to Saturday.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- set once, never read reactively
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const monday = addDays(today, -((today.getDay() + 6) % 7));
-  const start = addDays(monday, -(WEEKS - 1) * 7);
+  const sunday = addDays(today, -today.getDay());
+  const start = addDays(sunday, -(WEEKS - 1) * 7);
 
   let loading = $state(true);
   let error = $state('');
@@ -437,7 +437,7 @@
           </div>
           <div class="xaxis">
             {#each shown as d (d.key)}
-              <span>{d.date.getDay() === 1 ? dateFmt(d.date) : ''}</span>
+              <span>{d.date.getDay() === 0 ? dateFmt(d.date) : ''}</span>
             {/each}
           </div>
         </div>
@@ -447,7 +447,7 @@
     <div class="card">
       <h2>Weekly average</h2>
       <p class="muted">
-        Average time per day in each week (Monday to Sunday), per site.{withExtra
+        Average time per day in each week (Sunday to Saturday), per site.{withExtra
           ? ` Total includes ${extraLabel}.`
           : ''}
       </p>

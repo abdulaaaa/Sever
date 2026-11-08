@@ -23,7 +23,7 @@ export interface UsageData {
 }
 
 export interface WeekAverage {
-  first: Date; // the week's Monday
+  first: Date; // the week's Sunday
   n: number; // days since the first recorded day
   values: Record<string, number>; // average seconds per day, per series
   total: number; // average seconds per day
@@ -107,7 +107,7 @@ export function buildUsage(
   };
 }
 
-// Average per day for week w, where week 0 starts at days[0] (a Monday).
+// Average per day for week w, where week 0 starts at days[0] (a Sunday).
 // Days before the first recorded day and days after today don't count, so
 // the current week divides by the days so far. Limit time and each
 // tracked-only site count from their own first day, so none is averaged over
