@@ -1,6 +1,6 @@
 // Matching, schedules and other shared helpers.
 import { DEFAULT_BLOCKS, DEFAULT_SETTINGS, DEFAULT_FOCUS_CONFIG } from './defaults';
-import { DEV_MODE, EXTRA_SITES, EXTRA_PREFIX, PHONE_LIMITS } from './config';
+import { DEV_MODE, EXTRA_SITES, EXTRA_PREFIX, PHONE_LIMITS, PHONE_LIMIT_PREFIX } from './config';
 import { watchTokens, watchSquash, watchMatch, type WatchTerm } from './watch';
 import type {
   Block,
@@ -16,7 +16,8 @@ import type {
   Cache,
   FocusState,
   FocusDay,
-  TrackingState
+  TrackingState,
+  SiteUsageRow
 } from '../types';
 
 export const ALIASES: Record<string, string> = { 'twitter.com': 'x.com' };
@@ -194,6 +195,25 @@ export interface LimitUsage {
   phone: number; // phone seconds actually used in the limited apps
   held: number; // phone seconds held back: each app's time or its allowance, whichever is more
   used: number; // web + held, the figure compared with the limit
+}
+
+// Adds the time in iPhone apps that are open right now to today's figures. That time only
+// reaches the database when the app is closed, so without this it shows up all at once. Only
+// the limited apps count, and they go into the server total too, as phone_event does on close.
+export function addOpenPhone(
+  day: string,
+  server: number,
+  phone: Record<string, number>,
+  open: SiteUsageRow[]
+): { server: number; phone: Record<string, number> } {
+  const out = { ...phone };
+  for (const r of open) {
+    if (r.day !== day || !r.site.startsWith(PHONE_LIMIT_PREFIX)) continue;
+    const site = r.site.slice(PHONE_LIMIT_PREFIX.length);
+    out[site] = (out[site] || 0) + r.seconds;
+    server += r.seconds;
+  }
+  return { server, phone: out };
 }
 
 // Splits today's limit time into website and phone time. The server total already includes the

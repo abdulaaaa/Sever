@@ -126,6 +126,16 @@ export async function fetchPhoneUsage(day: string): Promise<Record<string, numbe
   });
 }
 
+// Seconds so far in the iPhone apps that are open right now, under the same site keys as
+// site_usage. Needs the phone_open_seconds function from the README.
+export async function fetchOpenPhone(): Promise<SiteUsageRow[]> {
+  return withAuth(async () => {
+    const { data, error } = await supabase.rpc('phone_open_seconds');
+    if (error) throw new Error(`Database error: ${error.message}`);
+    return (data as SiteUsageRow[] | null) || [];
+  });
+}
+
 export async function insertBlocks(rows: Omit<Block, 'id'>[]): Promise<Block[]> {
   return withAuth(async () => {
     const { data, error } = await supabase.from('blocks').insert(rows).select();

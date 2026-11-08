@@ -17,6 +17,7 @@ import {
   dayKey,
   summarize,
   limitUsage,
+  addOpenPhone,
   budgetSiteFor,
   isBudgetSite,
   extraSiteFor,
@@ -398,6 +399,28 @@ const JANE = block({ id: 'jane', target: 'instagram.com/jane.doe', person: 'Jane
 // The default night schedule runs from 9 pm to noon.
 const AFTERNOON = at(5, 13);
 const NIGHT = at(5, 22);
+
+describe('addOpenPhone', () => {
+  const day = '2026-11-08';
+
+  it("adds a limited app's open time to the phone figure and the server total", () => {
+    const r = addOpenPhone(day, 900, { 'instagram.com': 600 }, [
+      { day, site: 'phone:instagram.com', seconds: 120 },
+      { day, site: 'phone:linkedin.com', seconds: 60 }
+    ]);
+    expect(r).toEqual({ server: 1080, phone: { 'instagram.com': 720, 'linkedin.com': 60 } });
+  });
+
+  it('ignores tracked-only apps and sessions started on another day', () => {
+    const phone = { 'instagram.com': 600 };
+    const r = addOpenPhone(day, 900, phone, [
+      { day, site: 'extra:phone:youtube.com', seconds: 300 },
+      { day: '2026-11-07', site: 'phone:instagram.com', seconds: 300 }
+    ]);
+    expect(r).toEqual({ server: 900, phone: { 'instagram.com': 600 } });
+    expect(phone).toEqual({ 'instagram.com': 600 });
+  });
+});
 
 describe('limitUsage', () => {
   it('holds 20 minutes when nothing is used on the phone', () => {

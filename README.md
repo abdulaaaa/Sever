@@ -80,7 +80,7 @@ iOS Shortcuts automations report when an app is opened and closed, and the datab
 | YouTube | No, tracked only | YouTube (phone) |
 | WhatsApp | No, tracked only | WhatsApp (phone) |
 
-- Phone time reaches the laptop within about a minute of the app being closed.
+- While an app is open, its time so far shows on the laptop within about a minute and counts against the limit. The final time is saved when the app is closed.
 - One session adds at most 2 hours, so a missed close can't add a whole day. If an app is opened again before its close arrived, the earlier open counts as nothing.
 - A session counts on the day it started, by the phone's local date, even if it runs past midnight.
 - Requests made while the phone is offline are lost, so that session isn't counted.
@@ -452,6 +452,26 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 GRANT EXECUTE ON FUNCTION phone_event(TEXT, TEXT, TEXT, TEXT) TO anon;
+
+-- Called by the extension to count apps that are open on the phone right now,
+-- before their close arrives. Returns each one's seconds so far under the same
+-- site keys phone_event uses, capped at 2 hours like a finished session.
+CREATE OR REPLACE FUNCTION phone_open_seconds()
+RETURNS TABLE (day DATE, site TEXT, seconds INTEGER) AS $$
+  SELECT o.day,
+    CASE o.app
+      WHEN 'instagram' THEN 'phone:instagram.com'
+      WHEN 'linkedin' THEN 'phone:linkedin.com'
+      WHEN 'youtube' THEN 'extra:phone:youtube.com'
+      WHEN 'whatsapp' THEN 'extra:phone:whatsapp.com'
+    END,
+    least(greatest(floor(extract(epoch FROM now() - o.opened_at)), 0), 7200)::integer
+  FROM public.phone_open o
+  WHERE o.user_id = auth.uid();
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '';
+
+REVOKE EXECUTE ON FUNCTION phone_open_seconds() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION phone_open_seconds() TO authenticated;
 ```
 
 ### 2. Register a secret for the phone

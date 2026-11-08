@@ -20,13 +20,15 @@ import {
   pageRegex,
   isSiteTarget,
   schedActive,
-  dayKey
+  dayKey,
+  addOpenPhone
 } from '../lib/utils/common';
 import {
   fetchBlocks,
   fetchSettings,
   fetchUsage,
   fetchPhoneUsage,
+  fetchOpenPhone,
   insertBlocks,
   insertSettings,
   addUsage,
@@ -45,7 +47,8 @@ import type {
   FocusUnrated,
   FocusDay,
   FocusLog,
-  WarnedState
+  WarnedState,
+  SiteUsageRow
 } from '../lib/types';
 
 const TICK_CAP_MS = 75_000; // never count more than this between two checks (sleep, etc.)
@@ -164,11 +167,15 @@ async function sync(): Promise<void> {
     await flushSiteUsage().catch((e) => console.warn('Sever: site usage not synced:', e));
     await flushFocus().catch((e) => console.warn('Sever: lock-in history not synced:', e));
     const day = dayKey();
-    let [blocks, settingsRows, usageRows, phone] = await Promise.all([
+    let [blocks, settingsRows, usageRows, phone, open] = await Promise.all([
       fetchBlocks(),
       fetchSettings(),
       fetchUsage(day),
-      fetchPhoneUsage(day)
+      fetchPhoneUsage(day),
+      fetchOpenPhone().catch((e): SiteUsageRow[] => {
+        console.warn('Sever: open phone apps not read:', e);
+        return [];
+      })
     ]);
 
     // First sign-in ever: copy the starting blocks and settings into the database.
@@ -193,7 +200,7 @@ async function sync(): Promise<void> {
           person_terms: s.person_terms || {},
           focus_config: s.focus_config || {}
         },
-        usage: { day, seconds: usageRows[0]?.seconds || 0, phone }
+        usage: { day, ...addOpenPhone(day, usageRows[0]?.seconds || 0, phone, open) }
       },
       syncedAt: Date.now(),
       lastError: null

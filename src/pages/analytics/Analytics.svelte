@@ -8,7 +8,12 @@
     PHONE_PREFIX,
     PHONE_LIMIT_PREFIX
   } from '../../lib/utils/config';
-  import { fetchSiteUsageSince, fetchUsageSince, fetchFocusSince } from '../../lib/services/supa';
+  import {
+    fetchSiteUsageSince,
+    fetchUsageSince,
+    fetchFocusSince,
+    fetchOpenPhone
+  } from '../../lib/services/supa';
   import {
     addDays,
     buildUsage,
@@ -81,7 +86,7 @@
 
   async function load(): Promise<void> {
     const from = dayKey(start);
-    const [siteRows, totalRows, focusRows, local] = await Promise.all([
+    const [siteRows, totalRows, focusRows, open, local] = await Promise.all([
       fetchSiteUsageSince(from).catch((): SiteUsageRow[] | null => null),
       fetchUsageSince(from).catch((e): UsageDayRow[] => {
         error = String((e as Error).message || e);
@@ -91,6 +96,7 @@
         focusError = true;
         return [];
       }),
+      fetchOpenPhone().catch((): SiteUsageRow[] => []),
       chrome.storage.local.get([
         'pendingUsage',
         'pendingSiteUsage',
@@ -130,11 +136,14 @@
     }
     focusDays = list;
 
+    // Phone apps open right now aren't in the database until they close, so add them here.
+    // Limited apps count in the total too, as phone_event does on close.
+    const limitOpen = open.filter((r) => r.site.startsWith(PHONE_LIMIT_PREFIX));
     data = buildUsage(
       start,
       today,
-      siteRows || [],
-      totalRows,
+      siteRows ? [...siteRows, ...open] : [],
+      [...totalRows, ...limitOpen.map(({ day, seconds }) => ({ day, seconds }))],
       local.pendingSiteUsage || {},
       local.pendingUsage || {},
       SLOTS,
