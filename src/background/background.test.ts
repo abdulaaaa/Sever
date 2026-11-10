@@ -28,6 +28,8 @@ function fakeServer() {
     blockPosts: 0,
     anonReads: 0,
     beforeWrite: null as null | (() => void),
+    afterAddUsage: null as null | (() => void),
+    usage: 0, // today's seconds in the usage table
     seed(): void {
       server.blocks.push(
         ...DEFAULT_BLOCKS.map((b) => ({ ...b, id: crypto.randomUUID(), user_id: USER_ID }))
@@ -60,6 +62,18 @@ function fakeServer() {
     }
 
     const table = pathname.replace('/rest/v1/', '');
+
+    if (table === 'rpc/add_usage' && asUser) {
+      const { p_seconds } = (await req.json()) as { p_seconds: number };
+      server.usage += p_seconds;
+      server.afterAddUsage?.();
+      server.afterAddUsage = null;
+      return reply(200, server.usage);
+    }
+    if (table === 'rpc/phone_open_seconds') return reply(200, []);
+    if (table === 'usage' && req.method === 'GET') {
+      return reply(200, asUser && server.usage ? [{ seconds: server.usage }] : []);
+    }
     const rows = table === 'blocks' ? server.blocks : table === 'settings' ? server.settings : [];
 
     if (req.method === 'GET') {
@@ -235,7 +249,7 @@ describe('seeding the starting blocks', () => {
 
   it('adds nothing when the auth server fails during the reads of a new worker', async () => {
     f.server.seed();
-    f.server.authDown = 4; // the four reads in sync(); it is back in time for an insert
+    f.server.authDown = 5; // the five reads in sync(); it is back in time for an insert
     await reloadExtension(c);
 
     expect(f.server.blockPosts).toBe(0);
@@ -249,7 +263,7 @@ describe('seeding the starting blocks', () => {
     await reloadExtension(c);
     const before = c.chrome.storage.local.data.cache;
 
-    f.server.authDown = 4;
+    f.server.authDown = 5;
     await reloadExtension(c);
     expect(c.chrome.storage.local.data.cache).toEqual(before);
 
@@ -271,5 +285,67 @@ describe('seeding the starting blocks', () => {
     expect((c.chrome.storage.local.data.cache as { blocks: Row[] }).blocks).toHaveLength(
       DEFAULT_BLOCKS.length
     );
+  });
+});
+
+describe('time left across a sync', () => {
+  let c: ReturnType<typeof fakeChrome>;
+  let f: ReturnType<typeof fakeServer>;
+
+  beforeEach(() => {
+    c = fakeChrome();
+    f = fakeServer();
+    vi.stubGlobal('chrome', c.chrome);
+    vi.stubGlobal('fetch', vi.fn(f.handler));
+    vi.stubGlobal('WebSocket', class {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const timeLeft = async (): Promise<number> =>
+    ((await settled(c)) as { remaining: number }).remaining;
+
+  it('stays the same when a sync uploads the time counted so far', async () => {
+    f.server.seed();
+    await reloadExtension(c);
+    const day = (c.chrome.storage.local.data.cache as { usage: { day: string } }).usage.day;
+    c.chrome.storage.local.data.pendingUsage = { [day]: 300 };
+    const before = await timeLeft();
+
+    await reloadExtension(c);
+
+    expect(f.server.usage).toBe(300);
+    expect(c.chrome.storage.local.data.lastError).toBeNull();
+    expect((c.chrome.storage.local.data.cache as { usage: object }).usage).toEqual({
+      day,
+      seconds: 300,
+      phone: {}
+    });
+    expect(await timeLeft()).toBe(before);
+  });
+
+  it('stays the same when the upload lands but a read after it fails', async () => {
+    f.server.seed();
+    await reloadExtension(c);
+    const day = (c.chrome.storage.local.data.cache as { usage: { day: string } }).usage.day;
+    c.chrome.storage.local.data.pendingUsage = { [day]: 300 };
+    const before = await timeLeft();
+
+    f.server.afterAddUsage = () => (f.server.authDown = 99); // every call after the upload 503s
+    await reloadExtension(c);
+
+    expect(f.server.usage).toBe(300);
+    expect(c.chrome.storage.local.data.lastError).toBeTruthy();
+    expect(await timeLeft()).toBe(before);
+
+    // Once the server is back, the next sync takes its total without counting the 300 twice.
+    f.server.authDown = 0;
+    await reloadExtension(c);
+    expect(c.chrome.storage.local.data.lastError).toBeNull();
+    expect(await timeLeft()).toBe(before);
   });
 });

@@ -48,7 +48,8 @@ import type {
   FocusDay,
   FocusLog,
   WarnedState,
-  SiteUsageRow
+  SiteUsageRow,
+  Cache
 } from '../lib/types';
 
 const TICK_CAP_MS = 75_000; // never count more than this between two checks (sleep, etc.)
@@ -78,7 +79,15 @@ async function flushPending(): Promise<number | null> {
       const send = Math.min(600, Math.floor(pendingUsage[day]));
       const total = await addUsage(day, send);
       pendingUsage[day] -= send;
-      await chrome.storage.local.set({ pendingUsage });
+      // Move the seconds into the cached server total in the same write, so they stay counted if
+      // a read later in sync() fails. A sync that succeeds replaces the cache with the server total.
+      const { cache } = (await chrome.storage.local.get('cache')) as { cache?: Cache };
+      if (cache?.usage?.day === day) {
+        cache.usage.seconds = (cache.usage.seconds || 0) + send;
+        await chrome.storage.local.set({ pendingUsage, cache });
+      } else {
+        await chrome.storage.local.set({ pendingUsage });
+      }
       if (day === dayKey()) latest = total;
     }
     if (day !== dayKey()) delete pendingUsage[day];
@@ -190,6 +199,7 @@ async function sync(): Promise<void> {
     }
 
     const s = settingsRows[0];
+    const today = addOpenPhone(day, usageRows[0]?.seconds || 0, phone, open);
     await chrome.storage.local.set({
       cache: {
         blocks,
@@ -200,7 +210,7 @@ async function sync(): Promise<void> {
           person_terms: s.person_terms || {},
           focus_config: s.focus_config || {}
         },
-        usage: { day, ...addOpenPhone(day, usageRows[0]?.seconds || 0, phone, open) }
+        usage: { day, seconds: today.server, phone: today.phone }
       },
       syncedAt: Date.now(),
       lastError: null
