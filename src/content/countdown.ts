@@ -6,6 +6,7 @@
   let tickInterval: ReturnType<typeof setInterval> | null = null;
   let syncInterval: ReturnType<typeof setInterval> | null = null;
   let localRemaining: number = 0; // Local countdown in seconds
+  let isTracking = false; // whether the background is counting time right now
 
   // Format seconds to "MM:SS" or "H:MM:SS"
   function formatTime(seconds: number): string {
@@ -83,7 +84,7 @@
 
   interface GetTimeLeftResponse {
     remaining: number;
-    tracking: boolean;
+    tracking?: boolean;
   }
 
   interface ShouldShowCountdownResponse {
@@ -98,6 +99,7 @@
       })) as GetTimeLeftResponse;
       if (response && typeof response.remaining === 'number') {
         localRemaining = response.remaining;
+        isTracking = response.tracking ?? false;
         updatePill(localRemaining);
 
         // If out of time, trigger immediate check
@@ -110,9 +112,9 @@
     }
   }
 
-  // Local tick (decrements every second)
+  // Local tick (decrements every second while the background is counting)
   function tick(): void {
-    if (!document.hidden && document.hasFocus()) {
+    if (isTracking && !document.hidden && document.hasFocus()) {
       localRemaining = Math.max(0, localRemaining - 1);
       updatePill(localRemaining);
 
