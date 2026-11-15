@@ -27,7 +27,7 @@ A personal Chrome extension that blocks distracting websites, limits daily socia
 - **Daily limit**: 80 minutes a day for social media by default, shared between websites and the Instagram and LinkedIn iPhone apps.
 - **People**: block someone's profiles and searches for them.
 - **Lock-in mode**: a focus timer that blocks more, trims YouTube down and plays background audio.
-- **Analytics**: time per site per day and weekly averages and totals, including iPhone app time and lock-in sessions.
+- **Analytics**: time per site per day, plus the average and total for each week, including iPhone app time and lock-in sessions.
 - **Settings lock**: settings can only be changed during a time window you choose.
 - **Sync**: one private Supabase database for every Chrome profile and device. Blocking keeps working offline.
 
@@ -114,8 +114,9 @@ Lock-in settings and history sync like everything else. A running session belong
 
 ### Analytics
 
-Click **Analytics** in the popup to see time per daily-limit site per day, and the average per day for each week (Sunday to Saturday).
+Click **Analytics** in the popup to see time per daily-limit site per day, and each week (Sunday to Saturday) as an average per day or a total.
 
+- **Weekly table**: switch between **Average per day** and **Total**. The current week covers the days so far. The **This week** and **Last week** tiles show the average with the week's total underneath.
 - **Phone columns**: Instagram (phone) and LinkedIn (phone) are limit time and rank like any other limit site.
 - **Tracked-only time**: YouTube and WhatsApp Web, and the YouTube and WhatsApp iPhone apps, are recorded but never count against the limit. They keep being recorded after the limit is used up. The tiles show **Limit sites** and **With YouTube + WhatsApp** side by side, and a switch adds them to the chart and tables.
 - **YouTube in the browser** keeps counting while a video plays with sound and you aren't touching the mouse or keyboard. It stops when the video is paused or muted, or the screen locks. YouTube during a lock-in session isn't counted here; it shows in the lock-in table as "On YouTube".
@@ -524,6 +525,7 @@ The URL and anon key are the same values the extension uses, and alone they can'
 3. If you use the iPhone apps, re-run the block in [Add the phone tables and function](#1-add-the-phone-tables-and-function). Your secret and tables are kept.
 4. Reload the extension on **every** device. A device on an older build doesn't hold back the phone minutes, so it would let websites use them.
 5. Check the daily limit in Settings. From 80 minutes, the 20 phone minutes are held back; if it is still at 60, websites only get 40.
+6. Attempt counts for blocked people were removed. If your database still has the `attempts` table, you can delete it and its rows in the Supabase SQL editor with `DROP TABLE IF EXISTS attempts;`. Nothing reads it any more.
 
 ## Development
 
