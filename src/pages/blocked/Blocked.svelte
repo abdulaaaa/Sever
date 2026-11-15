@@ -1,17 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import {
-    loadState,
-    scheduleLabel,
-    timeLabel,
-    summarize,
-    focusLeft
-  } from '../../lib/utils/common';
-  import { recordAttempt, loadAttempts } from '../../lib/services/supa';
-  import { searchTarget } from '../../lib/utils/watch';
-  import type { AttemptSummary } from '../../lib/types';
+  import { loadState, scheduleLabel, timeLabel, focusLeft } from '../../lib/utils/common';
 
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- read-only
   const params = new URLSearchParams(location.search);
 
   let label = $state('Blocked');
@@ -19,9 +9,7 @@
   let titleHighlight = $state('');
   let sub = $state('');
   let note = $state('Close this tab and carry on.');
-  let showCounts = $state(false);
   let showBar = $state(false);
-  let counts: AttemptSummary = $state({ today: 0, week: 0, total: 0 });
 
   async function show(): Promise<void> {
     const st = await loadState();
@@ -70,33 +58,12 @@
     }
 
     label = block.person;
+    sub = 'Their pages are blocked at all times.';
     if (params.has('w')) {
       // A search or lookalike profile: don't put their page on screen.
       titleHighlight = '';
       title = 'Looking them up is blocked';
     }
-    // Count this attempt once (not again if the page is refreshed, or if the tab was already open).
-    const counting = !params.has('n') && !params.has('c');
-    if (counting) {
-      params.set('c', '1');
-      history.replaceState(null, '', '?' + params.toString());
-      await recordAttempt(params.has('w') ? searchTarget(block.person) : block.target);
-    }
-    // A blocked link shows its own count. A search is counted against the
-    // person, so show their total: every link plus searches.
-    const targets = params.has('w')
-      ? [
-          ...st.blocks.filter((b) => b.person === block.person).map((b) => b.target),
-          searchTarget(block.person)
-        ]
-      : [block.target];
-    const attempts = await loadAttempts(targets.length === 1 ? targets[0] : undefined);
-    const c = summarize(targets.flatMap((t) => attempts[t] || []));
-    sub = params.has('n')
-      ? "This tab was already open when the block started, so it wasn't counted."
-      : `You've tried ${c.total} time${c.total === 1 ? '' : 's'}.`;
-    counts = c;
-    showCounts = true;
   }
 
   onMount(() => {
@@ -114,14 +81,6 @@
     {/if}
   </h1>
   <p class="sub">{sub}</p>
-
-  {#if showCounts}
-    <div class="tiles">
-      <div class="tile"><b>{counts.today}</b><span class="muted small">today</span></div>
-      <div class="tile"><b>{counts.week}</b><span class="muted small">this week</span></div>
-      <div class="tile"><b>{counts.total}</b><span class="muted small">in total</span></div>
-    </div>
-  {/if}
 
   {#if showBar}
     <div class="bar-container">
@@ -164,13 +123,6 @@
   .sub {
     color: var(--muted);
     margin: 0 0 1.4rem;
-  }
-  .tiles {
-    grid-template-columns: repeat(3, 1fr);
-    margin: 0;
-  }
-  .tile {
-    background: var(--bg);
   }
   .note {
     margin-top: 1.4rem;

@@ -7,10 +7,6 @@ export interface WatchTerm {
   term: string; // letters only, e.g. "janedoe"
 }
 
-// Blocked searches and lookalike profiles are counted against the person,
-// not one of their links. This is the name they are saved under.
-export const searchTarget = (person: string): string => 'search:' + person;
-
 const LEET: Record<string, string> = {
   '0': 'o',
   '1': 'i',

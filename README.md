@@ -25,7 +25,7 @@ A personal Chrome extension that blocks distracting websites, limits daily socia
 
 - **Blocking rules**: block whole sites or single pages, always or on a schedule, with allow rules for exceptions.
 - **Daily limit**: 80 minutes a day for social media by default, shared between websites and the Instagram and LinkedIn iPhone apps.
-- **People**: block someone's profiles and searches for them, and count every attempt.
+- **People**: block someone's profiles and searches for them.
 - **Lock-in mode**: a focus timer that blocks more, trims YouTube down and plays background audio.
 - **Analytics**: time per site per day and weekly averages, including iPhone app time and lock-in sessions.
 - **Settings lock**: settings can only be changed during a time window you choose.
@@ -91,7 +91,7 @@ See [iPhone setup](#iphone-setup-optional) to turn this on.
 
 Add someone under **People** with a name and their profile URLs. Then:
 
-- **Their pages** are blocked, and every attempt is counted and shown in the popup (today, this week and in total).
+- **Their pages** are blocked.
 - **Searches** for their full name or a username from their links are blocked on Google, Bing, DuckDuckGo, YouTube and the search pages of social sites.
 - **Lookalikes** still match: different capitalisation, dots, underscores, trailing numbers, letter swaps like `j4ne`, and one or two typos. A profile whose username resembles theirs is blocked too.
 - **Typing** a match into a text box on a search engine or social site clears it and blocks the page. Text is compared inside the page and never stored or sent.
@@ -182,14 +182,6 @@ CREATE TABLE IF NOT EXISTS site_usage (
   PRIMARY KEY (user_id, day, site)
 );
 
--- Attempts to open a blocked person's pages
-CREATE TABLE IF NOT EXISTS attempts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  target TEXT NOT NULL,
-  at TIMESTAMPTZ NOT NULL
-);
-
 -- Lock-in history, one row per day
 CREATE TABLE IF NOT EXISTS focus_days (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -260,7 +252,6 @@ ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE blocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usage ENABLE ROW LEVEL SECURITY;
 ALTER TABLE site_usage ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE focus_days ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can manage their own settings" ON settings;
@@ -278,10 +269,6 @@ CREATE POLICY "Users can manage their own usage"
 DROP POLICY IF EXISTS "Users can manage their own site usage" ON site_usage;
 CREATE POLICY "Users can manage their own site usage"
   ON site_usage FOR ALL USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can manage their own attempts" ON attempts;
-CREATE POLICY "Users can manage their own attempts"
-  ON attempts FOR ALL USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Users can manage their own focus days" ON focus_days;
 CREATE POLICY "Users can manage their own focus days"
@@ -566,7 +553,7 @@ src/
 ├── background/      Service worker: blocking rules, time counting, sync every minute
 ├── content/         Content scripts: countdown, typing checks, lock-in page changes
 ├── pages/
-│   ├── popup/       Time left, attempts, lock-in controls
+│   ├── popup/       Time left, lock-in controls
 │   ├── options/     Settings page
 │   ├── blocked/     Page shown when something is blocked
 │   └── analytics/   Time per site per day, weekly averages, lock-in history

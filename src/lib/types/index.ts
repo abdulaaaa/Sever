@@ -61,7 +61,6 @@ export interface ExtensionState {
   phone: number; // seconds actually used in the limited iPhone apps today
   held: number; // seconds held back for those apps
   session: Session | null;
-  pendingAttempts: AttemptRecord[];
   lastError: string | null;
   syncedAt: number | null;
   usingDefaults: boolean;
@@ -114,12 +113,6 @@ export interface FocusDayRow extends FocusDay {
   day: string;
 }
 
-// Attempt record for tracking blocked page visits
-export interface AttemptRecord {
-  target: string;
-  at: string; // ISO timestamp
-}
-
 // Pending usage to sync with server
 export interface PendingUsage {
   [day: string]: number; // day key -> seconds
@@ -170,18 +163,6 @@ export interface GetTimeLeftResponse {
 
 export interface ShouldShowCountdownResponse {
   show: boolean;
-}
-
-// Attempts loaded from API
-export interface AttemptsMap {
-  [target: string]: number[]; // target -> array of timestamps
-}
-
-// Summary of attempts
-export interface AttemptSummary {
-  total: number;
-  today: number;
-  week: number;
 }
 
 // Warning state for notifications

@@ -33,15 +33,13 @@ import {
   insertSettings,
   addUsage,
   addSiteUsage,
-  addFocus,
-  flushPendingAttempts
+  addFocus
 } from '../lib/services/supa';
 import type {
   ExtensionState,
   DecisionResult,
   PendingUsage,
   PendingSiteUsage,
-  AttemptRecord,
   TrackingState,
   FocusState,
   FocusUnrated,
@@ -61,17 +59,10 @@ const serial = (fn: () => Promise<void>): Promise<void> =>
 
 // ---------- syncing with Supabase ----------
 async function flushPending(): Promise<number | null> {
-  const data = (await chrome.storage.local.get(['pendingAttempts', 'pendingUsage'])) as {
-    pendingAttempts?: AttemptRecord[];
+  const data = (await chrome.storage.local.get('pendingUsage')) as {
     pendingUsage?: PendingUsage;
   };
-  const pendingAttempts = data.pendingAttempts || [];
   const pendingUsage = data.pendingUsage || {};
-
-  if (pendingAttempts.length) {
-    await flushPendingAttempts(pendingAttempts);
-    await chrome.storage.local.set({ pendingAttempts: [] });
-  }
 
   let latest: number | null = null;
   for (const day of Object.keys(pendingUsage)) {
@@ -157,21 +148,6 @@ async function flushFocus(): Promise<void> {
 
 async function sync(): Promise<void> {
   try {
-    // Move counts from the previous version into the database.
-    const { visits } = (await chrome.storage.local.get('visits')) as {
-      visits?: Record<string, number[]>;
-    };
-    if (visits) {
-      const { pendingAttempts = [] } = (await chrome.storage.local.get('pendingAttempts')) as {
-        pendingAttempts?: AttemptRecord[];
-      };
-      for (const [target, times] of Object.entries(visits)) {
-        for (const t of times) pendingAttempts.push({ target, at: new Date(t).toISOString() });
-      }
-      await chrome.storage.local.set({ pendingAttempts });
-      await chrome.storage.local.remove('visits');
-    }
-
     await flushPending();
     await flushSiteUsage().catch((e) => console.warn('Sever: site usage not synced:', e));
     await flushFocus().catch((e) => console.warn('Sever: lock-in history not synced:', e));
@@ -326,12 +302,11 @@ async function applyRules(st: ExtensionState): Promise<void> {
   await chrome.storage.session.set({ rulesKey: key });
 }
 
-const blockedUrl = (d: DecisionResult, extra: string = ''): string =>
+const blockedUrl = (d: DecisionResult): string =>
   chrome.runtime.getURL(
     'src/pages/blocked/index.html?' +
       (d.focus ? 'focus=1' : d.budget ? 'budget=1' : `id=${d.id}`) +
-      (d.watch ? '&w=1' : '') +
-      extra
+      (d.watch ? '&w=1' : '')
   );
 
 // Send tabs that are already open to the blocked screen if they're now blocked.
@@ -343,7 +318,7 @@ async function sweep(st: ExtensionState): Promise<void> {
     if (!tab.url || !tab.id || tab.id === audio || (st.focus && tab.url.endsWith(AUDIO_MARK)))
       continue;
     const d = decide(tab.url, st);
-    if (d) chrome.tabs.update(tab.id, { url: blockedUrl(d, '&n=1') }).catch(() => {});
+    if (d) chrome.tabs.update(tab.id, { url: blockedUrl(d) }).catch(() => {});
   }
 }
 
@@ -723,6 +698,8 @@ chrome.idle.setDetectionInterval(60);
 
 chrome.runtime.onInstalled.addListener(() => {
   serial(async () => {
+    // Attempt counts were removed; clear what older versions left behind.
+    await chrome.storage.local.remove(['pendingAttempts', 'attemptsCache', 'visits']);
     await ensureAlarm();
     await focusTickSafe();
     await refresh();

@@ -15,7 +15,6 @@ import {
   isSettingsLocked,
   nextUnlockTime,
   dayKey,
-  summarize,
   limitUsage,
   addOpenPhone,
   budgetSiteFor,
@@ -347,27 +346,6 @@ describe('dayKey', () => {
   });
 });
 
-describe('summarize', () => {
-  it('counts attempts today and since Monday', () => {
-    const now = at(7, 15);
-    const times = [at(7), at(7, 14), at(6, 23, 59), at(5), at(4, 23, 59)].map((d) => d.getTime());
-    expect(summarize(times, now)).toEqual({ total: 5, today: 2, week: 4 });
-    expect(now).toEqual(at(7, 15));
-  });
-
-  it('starts the week on Monday even on a Sunday', () => {
-    expect(summarize([at(5, 12).getTime(), at(4, 12).getTime()], at(11, 9))).toEqual({
-      total: 2,
-      today: 0,
-      week: 1
-    });
-  });
-
-  it('returns zeros with no attempts', () => {
-    expect(summarize()).toEqual({ total: 0, today: 0, week: 0 });
-  });
-});
-
 const state = (over: Partial<ExtensionState> = {}): ExtensionState => ({
   blocks: DEFAULT_BLOCKS,
   settings: DEFAULT_SETTINGS,
@@ -378,7 +356,6 @@ const state = (over: Partial<ExtensionState> = {}): ExtensionState => ({
   phone: 0,
   held: 0,
   session: null,
-  pendingAttempts: [],
   lastError: null,
   syncedAt: null,
   usingDefaults: true,

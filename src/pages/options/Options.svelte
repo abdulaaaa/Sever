@@ -8,19 +8,11 @@
     normHost,
     isSettingsLocked,
     nextUnlockTime,
-    summarize,
     videoId
   } from '../../lib/utils/common';
-  import {
-    loadAttempts,
-    updateSettings,
-    insertBlock,
-    deleteBlock,
-    updateBlock,
-    renameAttemptTarget
-  } from '../../lib/services/supa';
-  import { watchSquash, searchTarget } from '../../lib/utils/watch';
-  import type { ExtensionState, Block, Schedule, Settings, AttemptSummary } from '../../lib/types';
+  import { updateSettings, insertBlock, deleteBlock, updateBlock } from '../../lib/services/supa';
+  import { watchSquash } from '../../lib/utils/watch';
+  import type { ExtensionState, Block, Schedule, Settings } from '../../lib/types';
 
   let st: ExtensionState | null = $state(null);
   let toastText = $state('');
@@ -66,17 +58,6 @@
   let alwaysBlocks: Block[] = $state([]);
   let scheduledBlocks: Array<{ block: Block; label: string; isActive: boolean }> = $state([]);
   let allowedBlocks: Block[] = $state([]);
-
-  // People report
-  let showReport = $state(false);
-  let reportLoading = $state(false);
-  let reportRows: Array<{
-    isPerson: boolean;
-    name: string;
-    target?: string;
-    today: number;
-    total: number;
-  }> = $state([]);
 
   // Summary tiles
   function activeCount(s: ExtensionState): number {
@@ -144,7 +125,6 @@
         await updateBlock(b.id, { person: trimmed });
       }
       if (moved) await saveSettings({ person_terms: { ...terms, [trimmed]: moved } });
-      await renameAttemptTarget(searchTarget(oldName), searchTarget(trimmed));
     }, `Renamed to "${trimmed}".`);
   }
 
@@ -464,58 +444,6 @@
     run(() => saveSettings({ settings_unlock_schedule: schedule }), 'Schedule saved.');
   }
 
-  async function toggleReport(): Promise<void> {
-    if (showReport) {
-      showReport = false;
-      return;
-    }
-
-    reportLoading = true;
-    try {
-      const attempts = await loadAttempts();
-      const people = [
-        ...new Set(st!.blocks.filter((b) => b.person).map((b) => b.person))
-      ] as string[];
-      const rows: typeof reportRows = [];
-
-      for (const name of people) {
-        // Each of the person's links, then searches and lookalike profiles.
-        const entries = [
-          ...st!.blocks
-            .filter((b) => b.person === name)
-            .map((b) => ({ label: b.target, target: b.target })),
-          { label: 'Searches and lookalike profiles', target: searchTarget(name) }
-        ];
-        const allCounts = entries.map((e) => summarize(attempts[e.target]));
-        const sum = (k: keyof AttemptSummary): number => allCounts.reduce((a, c) => a + c[k], 0);
-
-        rows.push({
-          isPerson: true,
-          name,
-          today: sum('today'),
-          total: sum('total')
-        });
-
-        for (let i = 0; i < entries.length; i++) {
-          rows.push({
-            isPerson: false,
-            name: '',
-            target: entries[i].label,
-            today: allCounts[i].today,
-            total: allCounts[i].total
-          });
-        }
-      }
-
-      reportRows = rows;
-      showReport = true;
-    } catch {
-      toast('Could not load report.');
-    } finally {
-      reportLoading = false;
-    }
-  }
-
   onMount(() => {
     render();
 
@@ -787,44 +715,6 @@
         <input type="text" bind:value={personLink} placeholder="Paste a profile link" />
         <button>Add</button>
       </form>
-      {#if personGroups.length > 0}
-        <div class="report-btn">
-          <button type="button" onclick={toggleReport} disabled={reportLoading}>
-            {reportLoading ? 'Loading...' : showReport ? 'Hide report' : 'View report'}
-          </button>
-        </div>
-        {#if showReport}
-          <div class="scroll report">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Page</th>
-                  <th class="num">Today</th>
-                  <th class="num">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                <!-- eslint-disable-next-line svelte/require-each-key -- entries may repeat -->
-                {#each reportRows as row}
-                  {#if row.isPerson}
-                    <tr class="person">
-                      <td>{row.name}</td>
-                      <td class="num">{row.today}</td>
-                      <td class="num">{row.total}</td>
-                    </tr>
-                  {:else}
-                    <tr>
-                      <td>{row.target}</td>
-                      <td class="num">{row.today || ''}</td>
-                      <td class="num">{row.total || ''}</td>
-                    </tr>
-                  {/if}
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      {/if}
     </div>
 
     <!-- Always Blocked Card -->
@@ -1095,12 +985,6 @@
     flex-shrink: 0;
     color: var(--danger);
   }
-  .report {
-    margin-top: 12px;
-  }
-  .report tr.person td {
-    font-weight: 600;
-  }
   .lock-toggle {
     display: flex;
     align-items: center;
@@ -1116,11 +1000,6 @@
     flex-wrap: wrap;
     gap: 10px;
     align-items: center;
-  }
-  .report-btn {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--line);
   }
   .allday {
     display: inline-flex;

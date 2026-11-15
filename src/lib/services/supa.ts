@@ -6,8 +6,6 @@ import type {
   Session,
   Block,
   Settings,
-  AttemptRecord,
-  AttemptsMap,
   SiteUsageRow,
   UsageDayRow,
   FocusDay,
@@ -265,103 +263,4 @@ export async function fetchFocusSince(fromDay: string): Promise<FocusDayRow[]> {
     if (error) throw new Error(`Database error: ${error.message}`);
     return data || [];
   });
-}
-
-export async function flushPendingAttempts(attempts: AttemptRecord[]): Promise<void> {
-  return withAuth(async () => {
-    const { error } = await supabase.from('attempts').insert(attempts);
-    if (error) throw new Error(`Database error: ${error.message}`);
-  });
-}
-
-export async function recordAttempt(target: string): Promise<void> {
-  const row: AttemptRecord = { target, at: new Date().toISOString() };
-  try {
-    await withAuth(async () => {
-      const { error } = await supabase.from('attempts').insert([row]);
-      if (error) throw error;
-    });
-  } catch {
-    const { pendingAttempts = [] } = (await chrome.storage.local.get('pendingAttempts')) as {
-      pendingAttempts?: AttemptRecord[];
-    };
-    pendingAttempts.push(row);
-    await chrome.storage.local.set({ pendingAttempts });
-  }
-}
-
-// Move attempts saved under one name to another, e.g. when a person is renamed.
-export async function renameAttemptTarget(from: string, to: string): Promise<void> {
-  const { pendingAttempts = [] } = (await chrome.storage.local.get('pendingAttempts')) as {
-    pendingAttempts?: AttemptRecord[];
-  };
-  if (pendingAttempts.some((r) => r.target === from)) {
-    await chrome.storage.local.set({
-      pendingAttempts: pendingAttempts.map((r) => (r.target === from ? { ...r, target: to } : r))
-    });
-  }
-  return withAuth(async () => {
-    const { error } = await supabase.from('attempts').update({ target: to }).eq('target', from);
-    if (error) throw new Error(`Database error: ${error.message}`);
-  });
-}
-
-interface AttemptRow {
-  target: string;
-  at: string;
-}
-
-export async function loadAttempts(target?: string): Promise<AttemptsMap> {
-  const out: AttemptsMap = {};
-  const add = (t: string, at: string): void => {
-    (out[t] = out[t] || []).push(new Date(at).getTime());
-  };
-
-  let server: AttemptRow[] | null = null;
-  try {
-    server = await withAuth(async () => {
-      // Fetch every row, 1000 at a time: the database caps what one request
-      // returns, and a capped count would silently stop going up.
-      const rows: AttemptRow[] = [];
-      for (let from = 0; ; from += 1000) {
-        let query = supabase
-          .from('attempts')
-          .select('target, at')
-          .order('at', { ascending: true })
-          .order('id', { ascending: true })
-          .range(from, from + 999);
-
-        if (target) {
-          query = query.eq('target', target);
-        }
-
-        const { data, error } = await query;
-        if (error) throw error;
-
-        rows.push(...(data || []));
-        if (!data || data.length < 1000) break;
-      }
-
-      if (!target) {
-        await chrome.storage.local.set({ attemptsCache: rows });
-      }
-
-      return rows;
-    });
-  } catch {
-    const { attemptsCache } = (await chrome.storage.local.get('attemptsCache')) as {
-      attemptsCache?: AttemptRow[];
-    };
-    server = attemptsCache || [];
-    if (target) server = server.filter((r) => r.target === target);
-  }
-
-  server.forEach((r) => add(r.target, r.at));
-
-  const { pendingAttempts = [] } = (await chrome.storage.local.get('pendingAttempts')) as {
-    pendingAttempts?: AttemptRecord[];
-  };
-  pendingAttempts.filter((r) => !target || r.target === target).forEach((r) => add(r.target, r.at));
-
-  return out;
 }

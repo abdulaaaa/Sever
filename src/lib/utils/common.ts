@@ -8,10 +8,8 @@ import type {
   Settings,
   ExtensionState,
   DecisionResult,
-  AttemptSummary,
   PendingUsage,
   PendingSiteUsage,
-  AttemptRecord,
   Session,
   Cache,
   FocusState,
@@ -177,18 +175,6 @@ export function dayKey(date: Date = new Date()): string {
   return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
 }
 
-export function summarize(times: number[] = [], now: Date = new Date()): AttemptSummary {
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const week = new Date(today);
-  week.setDate(week.getDate() - ((week.getDay() + 6) % 7));
-  return {
-    total: times.length,
-    today: times.filter((t) => t >= today.getTime()).length,
-    week: times.filter((t) => t >= week.getTime()).length
-  };
-}
-
 // ---------- current state ----------
 export interface LimitUsage {
   web: number; // website seconds, synced and pending
@@ -237,7 +223,6 @@ export function limitUsage(
 interface StorageData {
   cache?: Cache;
   pendingUsage?: PendingUsage;
-  pendingAttempts?: AttemptRecord[];
   session?: Session;
   lastError?: string;
   syncedAt?: number;
@@ -248,7 +233,6 @@ export async function loadState(): Promise<ExtensionState> {
   const s = (await chrome.storage.local.get([
     'cache',
     'pendingUsage',
-    'pendingAttempts',
     'session',
     'lastError',
     'syncedAt',
@@ -273,7 +257,6 @@ export async function loadState(): Promise<ExtensionState> {
     phone,
     held,
     session: s.session || null,
-    pendingAttempts: s.pendingAttempts || [],
     lastError: s.lastError || null,
     syncedAt: s.syncedAt || null,
     usingDefaults: !s.cache,
