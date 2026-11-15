@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildUsage, weekAverage } from './analytics';
+import { buildUsage, weekAverage, weekTotal } from './analytics';
 import type { SiteUsageRow, UsageDayRow } from '../types';
 
 // Monday 28 September to Wednesday 7 October 2026: one full week and three days.
@@ -213,5 +213,52 @@ describe('weekAverage', () => {
     expect(weekAverage(build(EXTRA), 2)).toBeNull();
     expect(weekAverage(build(EXTRA), -1)).toBeNull();
     expect(weekAverage(buildUsage(START, TODAY, [], [], {}, {}, 7, EXTRA), 0)).toBeNull();
+  });
+});
+
+describe('weekTotal', () => {
+  it('adds up the whole week, per site and in total', () => {
+    const week = weekTotal(build(EXTRA), 0)!;
+    expect(week.n).toBe(5);
+    expect(week.total).toBe(600);
+    expect(week.values).toEqual({ 'reddit.com': 600 });
+    expect(week.extra).toEqual({ 'extra:youtube.com': 1260, 'extra:whatsapp.com': 300 });
+    expect(week.totalAll).toBe(2160);
+  });
+
+  it('totals the current week over the days so far', () => {
+    const week = weekTotal(build(EXTRA), 1)!;
+    expect(week.n).toBe(3);
+    expect(week.total).toBe(0);
+    expect(week.extra).toEqual({ 'extra:youtube.com': 900, 'extra:whatsapp.com': 0 });
+    expect(week.totalAll).toBe(900);
+  });
+
+  it('is the average times the days counted when every day was recorded', () => {
+    const data = buildUsage(
+      START,
+      TODAY,
+      [],
+      [
+        '2026-09-28',
+        '2026-09-29',
+        '2026-09-30',
+        '2026-10-01',
+        '2026-10-02',
+        '2026-10-03',
+        '2026-10-04'
+      ].map((day, i) => ({ day, seconds: 60 * (i + 1) })),
+      {},
+      {},
+      7,
+      EXTRA
+    );
+    expect(weekTotal(data, 0)!.total).toBe(weekAverage(data, 0)!.total * 7);
+  });
+
+  it('returns null outside the range or without any data', () => {
+    expect(weekTotal(build(EXTRA), 2)).toBeNull();
+    expect(weekTotal(build(EXTRA), -1)).toBeNull();
+    expect(weekTotal(buildUsage(START, TODAY, [], [], {}, {}, 7, EXTRA), 0)).toBeNull();
   });
 });

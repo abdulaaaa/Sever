@@ -1,4 +1,4 @@
-// Turning usage rows into days and weekly averages for the analytics page.
+// Turning usage rows into days, weekly averages and weekly totals for the analytics page.
 import { dayKey } from './common';
 import type { SiteUsageRow, UsageDayRow, PendingUsage, PendingSiteUsage } from '../types';
 
@@ -138,5 +138,30 @@ export function weekAverage(data: UsageData, w: number): WeekAverage | null {
     total,
     extra: extras,
     totalAll: total + Object.values(extras).reduce((a, b) => a + b, 0)
+  };
+}
+
+// Total for week w, with the same fields as weekAverage but in seconds for
+// the whole week. The current week totals the days so far. Days before
+// anything was recorded hold no time, so they add nothing.
+export function weekTotal(data: UsageData, w: number): WeekAverage | null {
+  const { days, series, extra, firstData } = data;
+  if (firstData < 0 || w < 0 || w * 7 >= days.length) return null;
+  const part = days.slice(w * 7, w * 7 + 7);
+  const n = part.filter((_, i) => w * 7 + i >= firstData).length;
+  if (!n) return null;
+  const sum = (get: (d: UsageDay) => number): number => part.reduce((a, d) => a + get(d), 0);
+
+  const values: Record<string, number> = {};
+  for (const k of series) values[k] = sum((d) => d.values[k] || 0);
+  const extras: Record<string, number> = {};
+  for (const k of extra) extras[k] = sum((d) => d.extra[k] || 0);
+  return {
+    first: days[w * 7].date,
+    n,
+    values,
+    total: sum((d) => d.total),
+    extra: extras,
+    totalAll: sum((d) => d.totalAll)
   };
 }

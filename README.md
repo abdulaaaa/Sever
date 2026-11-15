@@ -27,7 +27,7 @@ A personal Chrome extension that blocks distracting websites, limits daily socia
 - **Daily limit**: 80 minutes a day for social media by default, shared between websites and the Instagram and LinkedIn iPhone apps.
 - **People**: block someone's profiles and searches for them.
 - **Lock-in mode**: a focus timer that blocks more, trims YouTube down and plays background audio.
-- **Analytics**: time per site per day and weekly averages, including iPhone app time and lock-in sessions.
+- **Analytics**: time per site per day and weekly averages and totals, including iPhone app time and lock-in sessions.
 - **Settings lock**: settings can only be changed during a time window you choose.
 - **Sync**: one private Supabase database for every Chrome profile and device. Blocking keeps working offline.
 
@@ -556,13 +556,13 @@ src/
 │   ├── popup/       Time left, lock-in controls
 │   ├── options/     Settings page
 │   ├── blocked/     Page shown when something is blocked
-│   └── analytics/   Time per site per day, weekly averages, lock-in history
+│   └── analytics/   Time per site per day, weekly averages and totals, lock-in history
 ├── lib/
 │   ├── services/    Supabase access
 │   ├── types/       Shared TypeScript types
 │   └── utils/
 │       ├── common.ts     URL matching, schedules, limit and state logic
-│       ├── analytics.ts  Turns usage rows into days and weekly averages
+│       ├── analytics.ts  Turns usage rows into days and weekly averages and totals
 │       ├── config.ts     Configuration, tracked-only sites, phone allowances
 │       └── defaults.ts   Starting blocks and settings
 └── assets/          Icons

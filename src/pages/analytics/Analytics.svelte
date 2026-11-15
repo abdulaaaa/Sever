@@ -18,6 +18,7 @@
     addDays,
     buildUsage,
     weekAverage,
+    weekTotal,
     OTHER,
     UNSPLIT,
     type UsageData,
@@ -68,6 +69,7 @@
     firstLimit: -1
   });
   let range = $state(4); // weeks shown in the chart
+  let weekly = $state<'average' | 'total'>('average'); // what the weekly table shows
   let withExtra = $state(false); // also show YouTube and WhatsApp, which don't count against the limit
   let hover: number | null = $state(null);
   let focusDays: Array<{ date: Date; d: FocusDay }> = $state([]); // lock-in history, newest first
@@ -192,8 +194,8 @@
   const dayTotal = (d: UsageDay): number => (withExtra ? d.totalAll : d.total);
   const dayVal = (d: UsageDay, k: string): number => d.values[k] || d.extra[k] || 0;
 
-  function weekRow(w: number): Row | null {
-    const avg = weekAverage(data, w);
+  function weekRow(w: number, mode: 'average' | 'total' = 'average'): Row | null {
+    const avg = (mode === 'total' ? weekTotal : weekAverage)(data, w);
     if (!avg) return null;
     const { n } = avg;
     const note =
@@ -225,7 +227,7 @@
   const weekRows = $derived.by(() => {
     const rows: Row[] = [];
     for (let w = WEEKS - 1; w >= 0; w--) {
-      const r = weekRow(w);
+      const r = weekRow(w, weekly);
       if (r) rows.push(r);
     }
     return rows;
@@ -246,6 +248,8 @@
 
   const thisWeek = $derived(days.length ? weekRow(WEEKS - 1) : null);
   const lastWeek = $derived(days.length ? weekRow(WEEKS - 2) : null);
+  const thisWeekSum = $derived(days.length ? weekRow(WEEKS - 1, 'total') : null);
+  const lastWeekSum = $derived(days.length ? weekRow(WEEKS - 2, 'total') : null);
 
   function outcomes(d: FocusDay): string {
     const parts = [
@@ -288,6 +292,14 @@
       </tbody>
     </table>
   </div>
+{/snippet}
+
+{#snippet weekSum(r: Row | null)}
+  {#if r}
+    <span class="muted small sum">
+      {fmt(r.total)} in total{data.extra.length ? ` · ${fmt(r.totalAll)} with ${extraLabel}` : ''}
+    </span>
+  {/if}
 {/snippet}
 
 {#snippet figures(total: number, totalAll: number)}
@@ -336,12 +348,14 @@
         <div class="tile">
           <span class="muted small">This week, average per day</span>
           {@render figures(thisWeek.total, thisWeek.totalAll)}
+          {@render weekSum(thisWeekSum)}
         </div>
       {/if}
       {#if lastWeek}
         <div class="tile">
           <span class="muted small">Last week, average per day</span>
           {@render figures(lastWeek.total, lastWeek.totalAll)}
+          {@render weekSum(lastWeekSum)}
         </div>
       {/if}
     </div>
@@ -454,9 +468,25 @@
     </div>
 
     <div class="card">
-      <h2>Weekly average</h2>
+      <div class="head">
+        <h2>Weekly</h2>
+        <div class="ranges">
+          <button
+            class:on={weekly === 'average'}
+            aria-pressed={weekly === 'average'}
+            onclick={() => (weekly = 'average')}>Average per day</button
+          >
+          <button
+            class:on={weekly === 'total'}
+            aria-pressed={weekly === 'total'}
+            onclick={() => (weekly = 'total')}>Total</button
+          >
+        </div>
+      </div>
       <p class="muted">
-        Average time per day in each week (Sunday to Saturday), per site.{withExtra
+        {weekly === 'total'
+          ? 'Total time in each week (Sunday to Saturday), per site.'
+          : 'Average time per day in each week (Sunday to Saturday), per site.'}{withExtra
           ? ` Total includes ${extraLabel}.`
           : ''}
       </p>
@@ -562,6 +592,10 @@
   }
   .pair span {
     display: block;
+  }
+  .sum {
+    display: block;
+    margin-top: 4px;
   }
   .controls {
     display: flex;
